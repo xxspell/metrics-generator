@@ -1,0 +1,15 @@
+[project]
+name = "metrics-generator"
+version = "0.1.0"
+description = "GitHub metrics generator"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.25.0",
+    "lxml>=4.6.0",
+    "python-dateutil>=2.8.0",
+    "aiohttp>=3.10.11",
+]
+
+[project.scripts]
+metrics-generator = "today:main"

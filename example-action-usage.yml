@@ -1,0 +1,24 @@
+
+name: Update GitHub Metrics
+
+on:
+  schedule:
+
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate and commit metrics
+        uses: xxspell/metrics-generator/action.yml@main
+        with:
+          target_repository: your-username/repo
+          target_branch: main
+          access_token: ${{ secrets.METRICS_ACCESS_TOKEN }}
+          user_name: ${{ secrets.METRICS_USER_NAME }}
+          proxy: ${{ secrets.METRICS_PROXY }}
+          excluded_repos: ${{ secrets.METRICS_EXCLUDED_REPOS }}
+          git_user_name: ${{ secrets.METRICS_GIT_USER_NAME }}
+          git_user_email: ${{ secrets.METRICS_GIT_USER_EMAIL }}
