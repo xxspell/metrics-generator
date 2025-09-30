@@ -44,15 +44,6 @@ runs:
         repository: xxspell/metrics-generator
         fetch-depth: 0
 
-#    - name: Verify checkout contents
-#      run: |
-#        echo "=== DEBUG: Current repository files after checkout ==="
-#        ls -la
-#        echo "=== DEBUG: Looking for pyproject.toml ==="
-#        find . -name "pyproject.toml" -type f -exec ls -la {} \;
-#        echo "=== DEBUG: All files in current directory ==="
-#        find . -maxdepth 1 -type f | head -20
-#      shell: bash
 
     - name: Checkout target repository for file access
       uses: actions/checkout@v4
@@ -63,10 +54,6 @@ runs:
 
     - name: Copy required files from target repository
       run: |
-        echo "=== DEBUG: Current directory before copying ==="
-        ls -la
-        echo "=== DEBUG: Target repository contents ==="
-        ls -la target-repo-temp/
         if [ -d "target-repo-temp/cache" ]; then
           echo "=== DEBUG: Cache directory contents ==="
           ls -la target-repo-temp/cache/
@@ -98,8 +85,6 @@ runs:
         # Create directories if they don't exist
         mkdir -p cache arts
 
-#        echo "=== DEBUG: Current directory after copying ==="
-#        ls -la
       shell: bash
 
     - name: Set up Python environment
@@ -108,25 +93,11 @@ runs:
         version: "latest"
 
     - name: Install dependencies
-      run: |
-#        echo "=== DEBUG: Current directory before uv sync ==="
-#        ls -la
-#        echo "=== DEBUG: pyproject.toml location ==="
-#        find . -name "pyproject.toml" -type f
-#        echo "=== DEBUG: Running uv sync ==="
-        uv sync
-#        echo "=== DEBUG: Current directory after uv sync ==="
-#        ls -la
+      run: uv sync
       shell: bash
 
     - name: Run metrics generator
-      run: |
-#        echo "=== DEBUG: Current directory before running script ==="
-#        ls -la
-#        echo "=== DEBUG: Python files ==="
-#        find . -name "*.py" -type f
-#        echo "=== DEBUG: Running Python script ==="
-        uv run a.py
+      run: uv run a.py
       env:
         ACCESS_TOKEN: ${{ inputs.access_token }}
         USER_NAME: ${{ inputs.user_name }}
@@ -136,10 +107,6 @@ runs:
 
     - name: Commit updated files to target repository
       run: |
-#        echo "=== DEBUG: Current directory before commit step ==="
-#        ls -la
-#        echo "=== DEBUG: Target repository temp contents ==="
-#        ls -la target-repo-temp/
         cd target-repo-temp
 
         # Copy updated files back to target repository
@@ -159,8 +126,6 @@ runs:
           cp ../light_mode.svg . || echo "No light_mode.svg to copy back"
         fi
 
-#        echo "=== DEBUG: Target repository contents after copying back ==="
-#        ls -la
 
         # Check if there are any changes
         if git diff --quiet && git diff --staged --quiet; then
@@ -168,8 +133,6 @@ runs:
           exit 0
         fi
 
-#        echo "=== DEBUG: Git status ==="
-#        git status
 
         # Configure git
         git config --local user.name "${{ inputs.git_user_name }}"
