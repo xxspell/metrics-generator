@@ -13,7 +13,7 @@ def ascii_to_svg(ascii_art, x, y, fill_color):
     # height = len(lines) * y
     # Start SVG
     svg_parts = [f'''
-  <text x="{x}" y="{y}" fill="{fill_color}" class="ascii"> ''']
+  <text x="{x}" y="{y}" fill="{fill_color}" class="ascii" id="ascii">''']
 
     # Add each line
     for i, line in enumerate(lines):
