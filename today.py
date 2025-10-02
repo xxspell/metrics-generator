@@ -345,7 +345,7 @@ def stars_counter(data):
     return total_stars
 
 
-def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib_data, follower_data, loc_data, lastfm_svg):
+def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib_data, follower_data, loc_data, lastfm_svg, ascii_svg):
     """
     Parse SVG files and update elements with my age, commits, stars, repositories, and lines written
     """
@@ -361,18 +361,6 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
     justify_format(root, 'loc_del', loc_data[1], 7)
 
 
-    if "dark" in filename:
-        fill = "#c9d1d9"
-    elif "light" in filename:
-        fill = "#24292f"
-    else:
-        fill = "#ff0000"
-
-    x = 15
-    y = 30
-
-    ascii_svg_block = ascii_to_svg(load_ascii_from_file(get_random_file('arts/')), x, y, fill)
-
     def overwrite_blocks(svg_block, name):
         new_text_element = etree.fromstring(svg_block)
         old_text_element = root.find(f".//*[@id='{name}']")
@@ -384,9 +372,21 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
             print(f"Not found {name} class")
 
     overwrite_blocks(lastfm_svg,"lastfm_block")
-    overwrite_blocks(ascii_svg_block,"ascii")
+    overwrite_blocks(ascii_svg,"ascii")
 
-    tree.write(filename, encoding='utf-8', xml_declaration=True)
+    def replace_colors(tree, mapping: dict):
+        for old, new in mapping.items():
+            for el in tree.xpath(f'//*[@fill="{old}"]'):
+                el.attrib["fill"] = new
+
+    if "dark" in filename:
+        replace_colors(tree, {
+            "#24292f": "#c9d1d9"})
+    elif "light" in filename:
+        replace_colors(tree, {
+            "#c9d1d9": "#24292f"})
+
+    tree.write(filename, encoding='utf-8', xml_declaration=True, )
 
 
 def justify_format(root, element_id, new_text, length=0):
@@ -545,16 +545,24 @@ async def main():
         for index in range(len(total_loc)-1): total_loc[index] = '{:,}'.format(total_loc[index]) # format added, deleted, and total LOC
 
         lastfm_svg, lastfm_time = await perf_counter(lastfm_getter, session, LASTFM_TOKEN, LASTFM_USER)
-        formatter('lastfm calculation', age_time)
-        svg_overwrite('dark_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg)
-        svg_overwrite('light_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg)
+        formatter('lastfm calculation', lastfm_time)
+
+        def ascii_getter():
+            return ascii_to_svg(load_ascii_from_file(get_random_file('arts/')), 15, 30, "#c9d1d9")
+
+        ascii_svg, ascii_time = await perf_counter(ascii_getter)
+        formatter('ascii calculation', lastfm_time)
+
+
+        svg_overwrite('dark_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg, ascii_svg)
+        svg_overwrite('light_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg, ascii_svg)
 
         # move cursor to override 'Calculation times:' with 'Total function time:' and the total function time, then move cursor back
         print(
             '\x1b[13F',
             '{:<21}'.format('Total function time:'),
             '{:>11}'.format('%.4f' % (
-                        user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time)),
+                        user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time + ascii_time)),
             ' s ' + '\x1b[E' * 13,
             sep=''
         )
