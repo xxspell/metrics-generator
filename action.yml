@@ -34,6 +34,12 @@ inputs:
     description: 'Git commit author email'
     required: false
     default: 'action@github.com'
+  lastfm_token:
+    description: 'API Token last.fm'
+    required: true
+  lastfm_user:
+    description: 'Username last.fm'
+    required: true
 
 runs:
   using: 'composite'
@@ -103,6 +109,8 @@ runs:
         USER_NAME: ${{ inputs.user_name }}
         PROXY: ${{ inputs.proxy }}
         EXCLUDED_REPOS: ${{ inputs.excluded_repos }}
+        LASTFM_TOKEN: ${{ inputs.lastfm_token }}
+        LASTFM_USER: ${{ inputs.lastfm_user }}
       shell: bash
 
     - name: Commit updated files to target repository

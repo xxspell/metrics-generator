@@ -1,13 +1,16 @@
 
-import datetime
-from dateutil import relativedelta
 import asyncio
-import aiohttp
-import os
-from lxml import etree
-import time
+import datetime
 import hashlib
+import os
+import time
+
+import aiohttp
+from dateutil import relativedelta
+from lxml import etree
+
 from art import load_ascii_from_file, ascii_to_svg, get_random_file
+from lastfm import lastfm_getter
 
 # Fine-grained personal access token with All Repositories access:
 # Account permissions: read:Followers, read:Starring, read:Watching
@@ -17,6 +20,8 @@ HEADERS = {'authorization': 'token '+ os.environ['ACCESS_TOKEN']}
 PROXY = os.environ.get('PROXY')
 USER_NAME = os.environ['USER_NAME']
 EXCLUDED_REPOS = os.environ.get('EXCLUDED_REPOS', '').split(',') if os.environ.get('EXCLUDED_REPOS') else []
+LASTFM_TOKEN = os.environ.get('LASTFM_TOKEN')
+LASTFM_USER = os.environ.get('LASTFM_USER')
 QUERY_COUNT = {'user_getter': 0, 'follower_getter': 0, 'graph_repos_stars': 0, 'recursive_loc': 0, 'graph_commits': 0, 'loc_query': 0}
 
 
@@ -340,7 +345,7 @@ def stars_counter(data):
     return total_stars
 
 
-def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib_data, follower_data, loc_data):
+def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib_data, follower_data, loc_data, lastfm_svg):
     """
     Parse SVG files and update elements with my age, commits, stars, repositories, and lines written
     """
@@ -367,15 +372,19 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
     y = 30
 
     ascii_svg_block = ascii_to_svg(load_ascii_from_file(get_random_file('arts/')), x, y, fill)
-    # print(ascii_svg_block)
-    new_text_element = etree.fromstring(ascii_svg_block)
-    old_text_element = root.find(".//*[@id='ascii']")
 
-    if old_text_element is not None:
-        parent = old_text_element.getparent()
-        parent.replace(old_text_element, new_text_element)
-    else:
-        print("Not found ascii class")
+    def overwrite_blocks(svg_block, name):
+        new_text_element = etree.fromstring(svg_block)
+        old_text_element = root.find(f".//*[@id='{name}']")
+
+        if old_text_element is not None:
+            parent = old_text_element.getparent()
+            parent.replace(old_text_element, new_text_element)
+        else:
+            print(f"Not found {name} class")
+
+    overwrite_blocks(lastfm_svg,"lastfm_block")
+    overwrite_blocks(ascii_svg_block,"ascii")
 
     tree.write(filename, encoding='utf-8', xml_declaration=True)
 
@@ -517,11 +526,15 @@ async def main():
         total_loc, loc_time = await perf_counter(loc_query, session, ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER'], 7)
         formatter('LOC (cached)', loc_time) if total_loc[-1] else formatter('LOC (no cache)', loc_time)
         commit_data, commit_time = await perf_counter(commit_counter, 7)
+        formatter('commit calculation', commit_time)
         star_data, star_time = await perf_counter(graph_repos_stars, session, 'stars', ['OWNER'])
+        formatter('star calculation', star_time)
         repo_data, repo_time = await perf_counter(graph_repos_stars, session, 'repos', ['OWNER'])
+        formatter('repo calculation', repo_time)
         contrib_data, contrib_time = await perf_counter(graph_repos_stars, session, 'repos', ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER'])
+        formatter('contri calculation', contrib_time)
         follower_data, follower_time = await perf_counter(follower_getter, session, USER_NAME)
-
+        formatter('follower calculation', follower_time)
         if OWNER_ID == {'id': 'MDQ6VXNlcjc0OTcyMzk'}:
             archived_data = add_archive()
             for index in range(len(total_loc)-1):
@@ -531,13 +544,20 @@ async def main():
 
         for index in range(len(total_loc)-1): total_loc[index] = '{:,}'.format(total_loc[index]) # format added, deleted, and total LOC
 
-        svg_overwrite('dark_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1])
-        svg_overwrite('light_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1])
+        lastfm_svg, lastfm_time = await perf_counter(lastfm_getter, session, LASTFM_TOKEN, LASTFM_USER)
+        formatter('lastfm calculation', age_time)
+        svg_overwrite('dark_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg)
+        svg_overwrite('light_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg)
 
         # move cursor to override 'Calculation times:' with 'Total function time:' and the total function time, then move cursor back
-        print('[F[F[F[F[F[F[F[F',
-            '{:<21}'.format('Total function time:'), '{:>11}'.format('%.4f' % (user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time)),
-            ' s [E[E[E[E[E[E[E[E', sep='')
+        print(
+            '\x1b[13F',
+            '{:<21}'.format('Total function time:'),
+            '{:>11}'.format('%.4f' % (
+                        user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time)),
+            ' s ' + '\x1b[E' * 13,
+            sep=''
+        )
 
         print('Total GitHub GraphQL API calls:', '{:>3}'.format(sum(QUERY_COUNT.values())))
         for funct_name, count in QUERY_COUNT.items(): print('{:<28}'.format('   ' + funct_name + ':'), '{:>6}'.format(count))
