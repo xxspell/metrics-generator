@@ -42,6 +42,14 @@ LANGUAGE_COLORS = {
     'Text': '#cccccc',  # Default for unknown
 }
 
+def human_readable_size(size_in_bytes):
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_in_bytes < 1024:
+            return f"{size_in_bytes:.1f}{unit}"
+        size_in_bytes /= 1024
+    return f"{size_in_bytes:.1f}PB"
+
+
 async def get_most_used_languages(session, user_name, headers, excluded_repos=None, owner_affiliation=['OWNER'], excluded_languages=None):
     if excluded_repos is None:
         excluded_repos = []
@@ -90,6 +98,7 @@ async def get_most_used_languages(session, user_name, headers, excluded_repos=No
     for repo in repos:
         owner, name = repo.split('/')
         async with session.get(f'https://api.github.com/repos/{owner}/{name}/languages', headers=headers) as response:
+            print(f"{owner}/{name} {await response.json()}")
             if response.status == 200:
                 langs = await response.json()
                 for lang, bytes_count in langs.items():
@@ -109,7 +118,8 @@ async def get_most_used_languages(session, user_name, headers, excluded_repos=No
         languages.append({
             'name': lang,
             'color': color,
-            'percentage': percentage
+            'percentage': percentage,
+            'bytes_count': bytes_count
         })
 
     return languages
@@ -124,12 +134,17 @@ def generate_languages_svg(x, y, fill_color, languages):
         name = lang['name']
         color = lang['color']
         percentage = lang['percentage']
+        bytes_count = lang.get('bytes_count', 0)
+
         percentage_str = f"{percentage:.1f}%"
-        content_length = len(str(i)) + 1 + len(name) + 1 + len(percentage_str) + 2
+        size_str = f"({human_readable_size(bytes_count)})"
+        full_value_str = f"{percentage_str} {size_str}"
+
+        content_length = len(str(i)) + 1 + len(name) + 1 + len(full_value_str) + 2
         dots_length = max(0, max_line_length - content_length)
         dots = '.' * dots_length
         svg += f'''
-    <tspan x="{x}" y="{current_y}" class="cc">. </tspan><tspan class="key">{i}.</tspan><tspan class="cc">{dots} </tspan><tspan fill="{color}">{name}</tspan> <tspan class="value">{percentage_str}</tspan>'''
+    <tspan x="{x}" y="{current_y}" class="cc">. </tspan><tspan class="key">{i}.</tspan><tspan class="cc">{dots} </tspan><tspan fill="{color}">{name}</tspan> <tspan class="value">{percentage_str}</tspan><tspan fill="{color}" class="artistColor"> {size_str}</tspan>'''
         current_y += 20
 
     bar_y = current_y + 10
