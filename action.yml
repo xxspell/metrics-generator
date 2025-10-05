@@ -40,6 +40,9 @@ inputs:
   lastfm_user:
     description: 'Username last.fm'
     required: true
+  excluded_languages:
+    description: 'Exclude languages for most used languages'
+    required: false
 
 runs:
   using: 'composite'
@@ -111,6 +114,7 @@ runs:
         EXCLUDED_REPOS: ${{ inputs.excluded_repos }}
         LASTFM_TOKEN: ${{ inputs.lastfm_token }}
         LASTFM_USER: ${{ inputs.lastfm_user }}
+        EXCLUDED_LANGUAGES: ${{ inputs.excluded_languages }}
       shell: bash
 
     - name: Commit updated files to target repository

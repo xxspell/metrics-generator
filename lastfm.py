@@ -42,7 +42,7 @@ def escape_xml(text):
             .replace('"', '&quot;')
             .replace("'", '&apos;'))
 
-def generate_lastfm_svg(scrobbles, start_x=390, start_y=290, max_line_length=60):
+def generate_lastfm_svg(scrobbles, start_x=390, start_y=120, max_line_length=60):
     svg_parts = []
 
     header_y = start_y

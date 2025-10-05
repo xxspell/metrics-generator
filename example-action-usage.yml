@@ -24,3 +24,4 @@ jobs:
           git_user_email: ${{ secrets.METRICS_GIT_USER_EMAIL }}
           lastfm_token: ${{ secrets.LASTFM_TOKEN }}
           last_fm_user: ${{ secrets.LAST_FM_USER }}
+          excluded_languages: php,html,css

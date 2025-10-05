@@ -10,6 +10,8 @@ from dateutil import relativedelta
 from lxml import etree
 
 from art import load_ascii_from_file, ascii_to_svg, get_random_file
+from github_stats import generate_github_stats_svg
+from languages_svg import get_most_used_languages, generate_languages_svg
 from lastfm import lastfm_getter
 
 # Fine-grained personal access token with All Repositories access:
@@ -20,6 +22,7 @@ HEADERS = {'authorization': 'token '+ os.environ['ACCESS_TOKEN']}
 PROXY = os.environ.get('PROXY')
 USER_NAME = os.environ['USER_NAME']
 EXCLUDED_REPOS = os.environ.get('EXCLUDED_REPOS', '').split(',') if os.environ.get('EXCLUDED_REPOS') else []
+EXCLUDED_LANGUAGES = os.environ.get('EXCLUDED_LANGUAGES', '').split(',') if os.environ.get('EXCLUDED_LANGUAGES') else [] #only for most languages used
 LASTFM_TOKEN = os.environ.get('LASTFM_TOKEN')
 LASTFM_USER = os.environ.get('LASTFM_USER')
 QUERY_COUNT = {'user_getter': 0, 'follower_getter': 0, 'graph_repos_stars': 0, 'recursive_loc': 0, 'graph_commits': 0, 'loc_query': 0}
@@ -236,7 +239,7 @@ async def cache_builder(session, edges, comment_size, force_cache, loc_add=0, lo
     Excludes repositories specified in EXCLUDED_REPOS environment variable
     """
     # Filter out excluded repositories
-    excluded_repos = get_excluded_repos()
+    excluded_repos = get_excluded_list(EXCLUDED_REPOS)
     if excluded_repos:
         filtered_edges = []
         for edge in edges:
@@ -345,21 +348,12 @@ def stars_counter(data):
     return total_stars
 
 
-def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib_data, follower_data, loc_data, lastfm_svg, ascii_svg):
+def svg_overwrite(filename, lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg):
     """
     Parse SVG files and update elements with my age, commits, stars, repositories, and lines written
     """
     tree = etree.parse(filename)
     root = tree.getroot()
-    justify_format(root, 'commit_data', commit_data, 22)
-    justify_format(root, 'star_data', star_data, 14)
-    justify_format(root, 'repo_data', repo_data, 6)
-    justify_format(root, 'contrib_data', contrib_data)
-    justify_format(root, 'follower_data', follower_data, 10)
-    justify_format(root, 'loc_data', loc_data[2], 9)
-    justify_format(root, 'loc_add', loc_data[0])
-    justify_format(root, 'loc_del', loc_data[1], 7)
-
 
     def overwrite_blocks(svg_block, name):
         new_text_element = etree.fromstring(svg_block)
@@ -373,6 +367,8 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
 
     overwrite_blocks(lastfm_svg,"lastfm_block")
     overwrite_blocks(ascii_svg,"ascii")
+    overwrite_blocks(github_stats_svg,"github_stats")
+    overwrite_blocks(most_used_lang_svg,"languages_block")
 
     def replace_colors(tree, mapping: dict):
         for old, new in mapping.items():
@@ -387,33 +383,6 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
             "#c9d1d9": "#24292f"})
 
     tree.write(filename, encoding='utf-8', xml_declaration=True, )
-
-
-def justify_format(root, element_id, new_text, length=0):
-    """
-    Updates and formats the text of the element, and modifes the amount of dots in the previous element to justify the new text on the svg
-    """
-    if isinstance(new_text, int):
-        new_text = f"{'{:,}'.format(new_text)}"
-    new_text = str(new_text)
-    find_and_replace(root, element_id, new_text)
-    just_len = max(0, length - len(new_text))
-    if just_len <= 2:
-        dot_map = {0: '', 1: ' ', 2: '. '}
-        dot_string = dot_map[just_len]
-    else:
-        dot_string = ' ' + ('.' * just_len) + ' '
-    find_and_replace(root, f"{element_id}_dots", dot_string)
-
-
-def find_and_replace(root, element_id, new_text):
-    """
-    Finds the element in the SVG file and replaces its text with a new value
-    """
-    element = root.find(f".//*[@id='{element_id}']")
-    if element is not None:
-        element.text = new_text
-
 
 def commit_counter(comment_size):
     """
@@ -470,22 +439,18 @@ def query_count(funct_id):
     global QUERY_COUNT
     QUERY_COUNT[funct_id] += 1
 
+def get_excluded_list(variable):
 
-def get_excluded_repos():
-    """
-    Returns a cleaned list of excluded repositories from environment variable
-    """
-    if not EXCLUDED_REPOS:
+    if not variable:
         return []
 
-    # Clean up repository names (strip whitespace, filter empty strings)
-    cleaned_repos = []
-    for repo in EXCLUDED_REPOS:
-        repo = repo.strip()
-        if repo:
-            cleaned_repos.append(repo)
+    cleaned = []
+    for v in variable:
+        v = v.strip()
+        if v:
+            cleaned.append(v)
 
-    return cleaned_repos
+    return cleaned
 
 
 async def perf_counter(funct, *args):
@@ -548,22 +513,38 @@ async def main():
         formatter('lastfm calculation', lastfm_time)
 
         def ascii_getter():
-            return ascii_to_svg(load_ascii_from_file(get_random_file('arts/')), 15, 30, "#c9d1d9")
+            root = etree.parse('dark_mode.svg').getroot()
+            filename = root.get('data-filename')
+            return ascii_to_svg(load_ascii_from_file(get_random_file('arts/', filename)), 15, 30, "#c9d1d9")
 
         ascii_svg, ascii_time = await perf_counter(ascii_getter)
         formatter('ascii calculation', lastfm_time)
 
 
-        svg_overwrite('dark_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg, ascii_svg)
-        svg_overwrite('light_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1], lastfm_svg, ascii_svg)
+        def github_stats_getter():
+            loc_data = total_loc[:-1]
+            return generate_github_stats_svg(x=390, y=450, fill_color="#c9d1d9", commit_data=commit_data, star_data=star_data, repo_data=repo_data, contrib_data=contrib_data, follower_data=follower_data, loc_total=loc_data[2], loc_add=loc_data[0], loc_del=loc_data[1])
+
+        github_stats_svg, github_stats_time = await perf_counter(github_stats_getter)
+        formatter('github stats svg calculation', github_stats_time)
+
+        async def most_used_lang_getter():
+            most_used_lang_svg = generate_languages_svg(x=390, y=280, fill_color="#c9d1d9", languages=await get_most_used_languages(session=session, user_name="xxspell",headers=HEADERS,excluded_repos=get_excluded_list(EXCLUDED_REPOS), excluded_languages=get_excluded_list(EXCLUDED_LANGUAGES)))
+            return most_used_lang_svg
+
+        most_used_lang_svg, most_used_lang_time = await perf_counter(most_used_lang_getter)
+        formatter('most lang svg calculation', most_used_lang_time)
+
+        svg_overwrite('dark_mode.svg',  lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg)
+        svg_overwrite('light_mode.svg', lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg)
 
         # move cursor to override 'Calculation times:' with 'Total function time:' and the total function time, then move cursor back
         print(
-            '\x1b[13F',
+            '\x1b[15F',
             '{:<21}'.format('Total function time:'),
             '{:>11}'.format('%.4f' % (
-                        user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time + ascii_time)),
-            ' s ' + '\x1b[E' * 13,
+                        user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time + ascii_time + github_stats_time + most_used_lang_time)),
+            ' s ' + '\x1b[E' * 15,
             sep=''
         )
 

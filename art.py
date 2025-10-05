@@ -2,7 +2,8 @@ import os
 import random
 
 
-def ascii_to_svg(ascii_art, x, y, fill_color):
+def ascii_to_svg(data, x, y, fill_color):
+    ascii_art, filepath = data
     lines = ascii_art.split('\n')
     lines = [line.rstrip() for line in lines]
 
@@ -13,7 +14,7 @@ def ascii_to_svg(ascii_art, x, y, fill_color):
     # height = len(lines) * y
     # Start SVG
     svg_parts = [f'''
-  <text x="{x}" y="{y}" fill="{fill_color}" class="ascii" id="ascii">''']
+  <text x="{x}" y="{y}" fill="{fill_color}" class="ascii" id="ascii" data-filename="{filepath}">''']
 
     # Add each line
     for i, line in enumerate(lines):
@@ -27,14 +28,20 @@ def ascii_to_svg(ascii_art, x, y, fill_color):
     svg_parts.append('  </text>\n')
     return '\n'.join(svg_parts)
 
-def get_random_file(folder_path: str) -> str:
+def get_random_file(folder_path: str, latest_filename: str | None = None) -> str:
     files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
     if not files:
         raise FileNotFoundError("There are no files in the folder")
+
+    if latest_filename:
+        latest_filename = os.path.basename(latest_filename)
+        if latest_filename in files and len(files) > 1:
+            files = [f for f in files if f != latest_filename]
+
     return os.path.join(folder_path, random.choice(files))
 
 def load_ascii_from_file(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
-        return f.read()
+        return f.read(), filepath
 
 

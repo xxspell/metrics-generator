@@ -219,3 +219,7 @@ __marimo__/
 
 .idea/
 .python-version
+
+*.svg
+arts/
+cache/
