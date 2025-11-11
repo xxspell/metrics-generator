@@ -48,6 +48,16 @@ uv run a.py
 
 Set environment variables as needed (ACCESS_TOKEN, USER_NAME, etc.).
 
+### Customization
+
+To customize SVG templates:
+
+1. Copy `dark_mode.svg` and `light_mode.svg` from the [xxspell/xxspell](https://github.com/xxspell/xxspell) repository.
+2. Modify them to use your own username/nickname.
+3. Place them in your repository and reference them in your README.
+
+You can also copy the `arts` folder from the same repository for additional art options.
+
 ## Inputs
 
 - `target_repository`: Repository to commit to (owner/repo)
