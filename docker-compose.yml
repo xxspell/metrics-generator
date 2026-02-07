@@ -1,0 +1,22 @@
+services:
+  metrics-generator:
+    build: .
+    command: ["./start-cron.sh"]
+    environment:
+      - ACCESS_TOKEN=${ACCESS_TOKEN}
+      - TARGET_REPOSITORY=${TARGET_REPOSITORY}
+      - USER_NAME=${USER_NAME}
+      - PROXY=${PROXY}
+      - EXCLUDED_REPOS=${EXCLUDED_REPOS}
+      - LASTFM_TOKEN=${LASTFM_TOKEN}
+      - LASTFM_USER=${LASTFM_USER}
+      - EXCLUDED_LANGUAGES=${EXCLUDED_LANGUAGES}
+      - GIT_USER_NAME=${GIT_USER_NAME:-GitHub Action}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-action@github.com}
+      - TARGET_BRANCH=${TARGET_BRANCH:-main}
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-*/30 * * * *}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - .:/app
+      - ./cache:/app/cache
+    restart: unless-stopped
