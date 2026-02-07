@@ -158,17 +158,24 @@ async def recursive_loc(session, owner, repo_name, data, cache_comment, addition
         }
     }'''
     variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor}
-    async with session.post('https://api.github.com/graphql', json={'query': query, 'variables':variables}, headers=HEADERS) as response:
-        # print(response.status)
-        if response.status == 200:
-            json_data = await response.json()
-            if json_data['data']['repository']['defaultBranchRef'] != None: # Only count commits if repo isn't empty
-                return await loc_counter_one_repo(session, owner, repo_name, data, cache_comment, json_data['data']['repository']['defaultBranchRef']['target']['history'], addition_total, deletion_total, my_commits)
-            else: return 0
-        await force_close_file(data, cache_comment) # saves what is currently in the file before this program crashes
-        if response.status == 403:
-            raise Exception('Too many requests in a short amount of time!\nYou\'ve hit the non-documented anti-abuse limit!')
-        raise Exception('recursive_loc() has failed with a', response.status, await response.text(), QUERY_COUNT)
+    for attempt in range(3):
+        try:
+            async with session.post('https://api.github.com/graphql', json={'query': query, 'variables':variables}, headers=HEADERS) as response:
+                # print(response.status)
+                if response.status == 200:
+                    json_data = await response.json()
+                    if json_data['data']['repository']['defaultBranchRef'] != None:
+                        return await loc_counter_one_repo(session, owner, repo_name, data, cache_comment, json_data['data']['repository']['defaultBranchRef']['target']['history'], addition_total, deletion_total, my_commits)
+                    else: return 0
+                await force_close_file(data, cache_comment)
+                if response.status == 403:
+                    raise Exception('Too many requests in a short amount of time!\nYou\'ve hit the non-documented anti-abuse limit!')
+                raise Exception('recursive_loc() has failed with a', response.status, await response.text(), QUERY_COUNT)
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            if attempt == 2:
+                raise e
+            print(f"Attempt {attempt + 1} failed, retrying... Error: {e}")
+            await asyncio.sleep(2 ** attempt)
 
 
 async def loc_counter_one_repo(session, owner, repo_name, data, cache_comment, history, addition_total, deletion_total, my_commits):

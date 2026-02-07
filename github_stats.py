@@ -1,9 +1,17 @@
 def justify_text(new_text, length=0, use_k=False):
     if isinstance(new_text, int):
-        if use_k and new_text >= 1000:
-            new_text = f"{new_text // 1000}k"
+        candidates = [f"{'{:,}'.format(new_text)}"]
+        if use_k:
+            if new_text >= 1000:
+                candidates.append(f"{new_text / 1000:.3f}k")
+            if new_text >= 1000000:
+                candidates.append(f"{new_text / 1000000:.3f}kk")
+        for cand in candidates:
+            if len(cand) <= length:
+                new_text = cand
+                break
         else:
-            new_text = f"{'{:,}'.format(new_text)}"
+            new_text = candidates[-1]  # use the last (shortest) if none fit
     new_text = str(new_text)
     just_len = max(0, length - len(new_text))
     if just_len <= 2:
