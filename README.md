@@ -45,6 +45,8 @@ Main variables:
 Docker scheduler variables:
 
 - `CRON_SCHEDULE`: cron expression (default: `*/30 * * * *`)
+- `CRON_LOG_MODE`: `file` or `stdout` (default: `file`)
+- `CRON_LOG_FILE`: log file path when `CRON_LOG_MODE=file` (default: `/var/log/metrics-cron.log`)
 - `TZ`: timezone for cron (default: `UTC`)
 
 ## Run with GitHub Actions
@@ -83,6 +85,14 @@ View logs:
 ```bash
 docker compose logs -f metrics-generator
 ```
+
+If `CRON_LOG_MODE=file`, follow task logs inside container:
+
+```bash
+docker compose exec metrics-generator sh -lc 'tail -f /var/log/metrics-cron.log'
+```
+
+If `CRON_LOG_MODE=stdout`, task output is visible directly in `docker compose logs`.
 
 Stop scheduler:
 

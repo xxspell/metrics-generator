@@ -2,8 +2,23 @@
 set -eu
 
 : "${CRON_SCHEDULE:=*/30 * * * *}"
+: "${CRON_LOG_MODE:=file}"
+: "${CRON_LOG_FILE:=/var/log/metrics-cron.log}"
 
 CRON_FILE="/etc/cron.d/metrics-generator"
+CRON_COMMAND="cd /app && ./run.sh >> ${CRON_LOG_FILE} 2>&1"
+
+case "$CRON_LOG_MODE" in
+  stdout)
+    CRON_COMMAND="cd /app && ./run.sh >> /proc/1/fd/1 2>> /proc/1/fd/2"
+    ;;
+  file)
+    ;;
+  *)
+    echo "[metrics-generator] invalid CRON_LOG_MODE: ${CRON_LOG_MODE}. Use 'file' or 'stdout'."
+    exit 1
+    ;;
+esac
 
 {
   echo "SHELL=/bin/sh"
@@ -17,12 +32,16 @@ CRON_FILE="/etc/cron.d/metrics-generator"
     fi
   done
 
-  echo "${CRON_SCHEDULE} root cd /app && ./run.sh >> /var/log/metrics-cron.log 2>&1"
+  echo "${CRON_SCHEDULE} root ${CRON_COMMAND}"
 } > "$CRON_FILE"
 
 chmod 0644 "$CRON_FILE"
 
 echo "[metrics-generator] cron schedule: ${CRON_SCHEDULE}"
-touch /var/log/metrics-cron.log
+echo "[metrics-generator] log mode: ${CRON_LOG_MODE}"
+if [ "$CRON_LOG_MODE" = "file" ]; then
+  echo "[metrics-generator] log file: ${CRON_LOG_FILE}"
+  touch "$CRON_LOG_FILE"
+fi
 
 exec cron -f

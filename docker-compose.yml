@@ -15,6 +15,8 @@ services:
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-action@github.com}
       - TARGET_BRANCH=${TARGET_BRANCH:-main}
       - CRON_SCHEDULE=${CRON_SCHEDULE:-*/30 * * * *}
+      - CRON_LOG_MODE=${CRON_LOG_MODE:-file}
+      - CRON_LOG_FILE=${CRON_LOG_FILE:-/var/log/metrics-cron.log}
       - TZ=${TZ:-UTC}
     volumes:
       - .:/app
