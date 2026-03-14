@@ -22,7 +22,7 @@ def justify_text(new_text, length=0, use_k=False):
     return dot_string, new_text
 
 
-def generate_github_stats_svg(x, y, fill_color, commit_data, star_data, repo_data, contrib_data, follower_data, loc_total, loc_add, loc_del):
+def generate_github_stats_svg(x, y, fill_color, commit_data, star_data, repo_data, contrib_data, follower_data, loc_total, loc_add, loc_del, recent_commit_data=None, streak_data=None):
     repo_dots, repo_val = justify_text(repo_data, 7)
     star_dots, star_val = justify_text(star_data, 14)
     commit_dots, commit_val = justify_text(commit_data, 23)
@@ -35,8 +35,28 @@ def generate_github_stats_svg(x, y, fill_color, commit_data, star_data, repo_dat
     svg = f'''<text x="{x}" y="{y}" fill="{fill_color}" id="github_stats">
     <tspan x="{x}" y="{y}">- GitHub Stats</tspan> -—————————————————————————————————————————-—-
     <tspan x="{x}" y="{y+20}" class="cc">. </tspan><tspan class="key">Repos</tspan>:<tspan class="cc" id="repo_data_dots">{repo_dots}</tspan><tspan class="value" id="repo_data">{repo_val}</tspan> {{<tspan class="key">Contributed</tspan>: <tspan class="value" id="contrib_data">{contrib_val}</tspan>}} | <tspan class="key">Stars</tspan>:<tspan class="cc" id="star_data_dots">{star_dots}</tspan><tspan class="value" id="star_data">{star_val}</tspan>
-    <tspan x="{x}" y="{y+40}" class="cc">. </tspan><tspan class="key">Commits</tspan>:<tspan class="cc" id="commit_data_dots">{commit_dots}</tspan><tspan class="value" id="commit_data">{commit_val}</tspan> | <tspan class="key">Followers</tspan>:<tspan class="cc" id="follower_data_dots">{follower_dots}</tspan><tspan class="value" id="follower_data">{follower_val}</tspan>
-    <tspan x="{x}" y="{y+60}" class="cc">. </tspan><tspan class="key">Lines of Code on GitHub</tspan>:<tspan class="cc" id="loc_data_dots">{loc_dots}</tspan><tspan class="value" id="loc_data">{loc_val}</tspan> ( <tspan class="addColor" id="loc_add">{loc_add_val}</tspan><tspan class="addColor">++</tspan>, <tspan id="loc_del_dots">{loc_del_dots}</tspan><tspan class="delColor" id="loc_del">{loc_del_val}</tspan><tspan class="delColor">--</tspan> )
+    <tspan x="{x}" y="{y+40}" class="cc">. </tspan><tspan class="key">Commits</tspan>:<tspan class="cc" id="commit_data_dots">{commit_dots}</tspan><tspan class="value" id="commit_data">{commit_val}</tspan> | <tspan class="key">Followers</tspan>:<tspan class="cc" id="follower_data_dots">{follower_dots}</tspan><tspan class="value" id="follower_data">{follower_val}</tspan>'''
+
+    if recent_commit_data is not None or streak_data is not None:
+        if recent_commit_data is not None:
+            recent_dots, recent_val = justify_text(recent_commit_data, 18)
+            recent_part = f'<tspan class="key">Commits (7d)</tspan>:<tspan class="cc" id="recent_commit_dots">{recent_dots}</tspan><tspan class="value" id="recent_commit_data">{recent_val}</tspan>'
+        else:
+            recent_part = ''
+
+        if streak_data is not None:
+            streak_dots, streak_val = justify_text(streak_data, 8)
+            streak_part = f' | <tspan class="key">Streak</tspan>:<tspan class="cc" id="streak_dots">{streak_dots}</tspan><tspan class="value" id="streak_data">{streak_val} days</tspan>'
+        else:
+            streak_part = ''
+
+        combined_part = recent_part + streak_part
+        svg += f'\n    <tspan x="{x}" y="{y+60}" class="cc">. </tspan>{combined_part}'
+
+    y_pos_base = y + 80 if (recent_commit_data is not None or streak_data is not None) else y + 60
+
+    svg += f'''
+    <tspan x="{x}" y="{y_pos_base}" class="cc">. </tspan><tspan class="key">Lines of Code on GitHub</tspan>:<tspan class="cc" id="loc_data_dots">{loc_dots}</tspan><tspan class="value" id="loc_data">{loc_val}</tspan> ( <tspan class="addColor" id="loc_add">{loc_add_val}</tspan><tspan class="addColor">++</tspan>, <tspan id="loc_del_dots">{loc_del_dots}</tspan><tspan class="delColor" id="loc_del">{loc_del_val}</tspan><tspan class="delColor">--</tspan> )
 </text>'''
 
     return svg

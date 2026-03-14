@@ -42,14 +42,14 @@ def escape_xml(text):
             .replace('"', '&quot;')
             .replace("'", '&apos;'))
 
-def generate_lastfm_svg(scrobbles, start_x=390, start_y=120, max_line_length=60):
+def generate_lastfm_svg(scrobbles, start_x=390, start_y=60, max_line_length=60):
     svg_parts = []
 
     header_y = start_y
     svg_parts.append(
         f'<text x="{start_x}" y="{header_y}" fill="#c9d1d9" id="lastfm_block">')
     svg_parts.append(
-        f'<tspan x="{start_x}" y="{header_y}">- Last.fm Recent Scrobbles</tspan> -—————————————————————————————-—-')
+        f'<tspan x="{start_x}" y="{header_y}">- Last.fm Recent Scrobbles</tspan> -——————————————————————————————————-—-')
     current_y = header_y + 20
 
     min_dots_count = 1

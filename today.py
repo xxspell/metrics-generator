@@ -83,6 +83,81 @@ async def graph_commits(session, start_date, end_date):
     return int(request['data']['user']['contributionsCollection']['contributionCalendar']['totalContributions'])
 
 
+async def get_recent_commits_and_streak(session):
+    """
+    Gets commit data for the last 7 days and calculates current streak
+    """
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+    start_date_7d = end_date - datetime.timedelta(days=7)
+
+    recent_commits = await graph_commits(session, start_date_7d.isoformat(), end_date.isoformat())
+
+    streak = await calculate_current_streak(session)
+
+    return recent_commits, streak
+
+
+async def calculate_current_streak(session):
+    """
+    Calculates the current commit streak by checking the contribution calendar
+    """
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+    start_date = end_date - datetime.timedelta(days=366)
+
+    query = '''
+    query($start_date: DateTime!, $end_date: DateTime!, $login: String!) {
+        user(login: $login) {
+            contributionsCollection(from: $start_date, to: $end_date) {
+                contributionCalendar {
+                    weeks {
+                        contributionDays {
+                            date
+                            contributionCount
+                        }
+                    }
+                }
+            }
+        }
+    }'''
+
+    variables = {
+        'start_date': start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'end_date': end_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'login': USER_NAME
+    }
+
+    try:
+        request = await simple_request(session, "calculate_current_streak", query, variables)
+        weeks = request['data']['user']['contributionsCollection']['contributionCalendar']['weeks']
+
+        all_days = []
+        for week in weeks:
+            all_days.extend(week['contributionDays'])
+
+        all_days.sort(key=lambda x: x['date'], reverse=True)
+
+        streak = 0
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+
+        for i, day in enumerate(all_days):
+            day_date = datetime.datetime.strptime(day['date'], '%Y-%m-%d').date()
+
+            days_ago = (today - day_date).days
+
+            if i == days_ago:
+                if day['contributionCount'] > 0:
+                    streak += 1
+                else:
+                    break
+            else:
+                break
+
+        return streak
+    except Exception as e:
+        print(f"Error calculating streak: {e}")
+        return 0
+
+
 async def graph_repos_stars(session, count_type, owner_affiliation, cursor=None, add_loc=0, del_loc=0):
     """
     Uses GitHub's GraphQL v4 API to return my total repository, star, or lines of code count.
@@ -527,16 +602,17 @@ async def main():
         ascii_svg, ascii_time = await perf_counter(ascii_getter)
         formatter('ascii calculation', lastfm_time)
 
+        recent_commits, streak = await get_recent_commits_and_streak(session)
 
         def github_stats_getter():
             loc_data = total_loc[:-1]
-            return generate_github_stats_svg(x=390, y=450, fill_color="#c9d1d9", commit_data=commit_data, star_data=star_data, repo_data=repo_data, contrib_data=contrib_data, follower_data=follower_data, loc_total=loc_data[2], loc_add=loc_data[0], loc_del=loc_data[1])
+            return generate_github_stats_svg(x=390, y=390, fill_color="#c9d1d9", commit_data=commit_data, star_data=star_data, repo_data=repo_data, contrib_data=contrib_data, follower_data=follower_data, loc_total=loc_data[2], loc_add=loc_data[0], loc_del=loc_data[1], recent_commit_data=recent_commits, streak_data=streak)
 
         github_stats_svg, github_stats_time = await perf_counter(github_stats_getter)
         formatter('github stats svg calculation', github_stats_time)
 
         async def most_used_lang_getter():
-            most_used_lang_svg = generate_languages_svg(x=390, y=280, fill_color="#c9d1d9", languages=await get_most_used_languages(session=session, user_name="xxspell",headers=HEADERS,excluded_repos=get_excluded_list(EXCLUDED_REPOS), excluded_languages=get_excluded_list(EXCLUDED_LANGUAGES)))
+            most_used_lang_svg = generate_languages_svg(x=390, y=220, fill_color="#c9d1d9", languages=await get_most_used_languages(session=session, user_name="xxspell",headers=HEADERS,excluded_repos=get_excluded_list(EXCLUDED_REPOS), excluded_languages=get_excluded_list(EXCLUDED_LANGUAGES)))
             return most_used_lang_svg
 
         most_used_lang_svg, most_used_lang_time = await perf_counter(most_used_lang_getter)

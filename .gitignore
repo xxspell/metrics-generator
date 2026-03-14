@@ -223,3 +223,5 @@ __marimo__/
 *.svg
 arts/
 cache/
+/CLAUDE.md
+/.serena
