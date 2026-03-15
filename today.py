@@ -137,22 +137,28 @@ async def calculate_current_streak(session):
         all_days.sort(key=lambda x: x['date'], reverse=True)
 
         streak = 0
-        today = datetime.datetime.now(datetime.timezone.utc).date()
+        today_date = datetime.datetime.now(datetime.timezone.utc).date()
 
-        for i, day in enumerate(all_days):
+        for day in all_days:
             day_date = datetime.datetime.strptime(day['date'], '%Y-%m-%d').date()
+            count = day['contributionCount']
 
-            days_ago = (today - day_date).days
+            if day_date == today_date:
+                if count > 0:
 
-            if i == days_ago:
-                if day['contributionCount'] > 0:
                     streak += 1
                 else:
-                    break
+
+                    continue
             else:
-                break
+                if count > 0:
+                    streak += 1
+                else:
+
+                    break
 
         return streak
+
     except Exception as e:
         print(f"Error calculating streak: {e}")
         return 0
