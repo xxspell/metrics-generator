@@ -8,11 +8,13 @@ import time
 import aiohttp
 from dateutil import relativedelta
 from lxml import etree
+from loguru import logger
 
 from art import load_ascii_from_file, ascii_to_svg, get_random_file
 from github_stats import generate_github_stats_svg
 from languages_svg import get_most_used_languages, generate_languages_svg
 from lastfm import lastfm_getter
+from svg_header import make_header_tail
 
 # Fine-grained personal access token with All Repositories access:
 # Account permissions: read:Followers, read:Starring, read:Watching
@@ -25,7 +27,10 @@ EXCLUDED_REPOS = os.environ.get('EXCLUDED_REPOS', '').split(',') if os.environ.g
 EXCLUDED_LANGUAGES = os.environ.get('EXCLUDED_LANGUAGES', '').split(',') if os.environ.get('EXCLUDED_LANGUAGES') else [] #only for most languages used
 LASTFM_TOKEN = os.environ.get('LASTFM_TOKEN')
 LASTFM_USER = os.environ.get('LASTFM_USER')
+SVG_HEADER_IDENTITY = os.environ.get('SVG_HEADER_IDENTITY', USER_NAME)
 QUERY_COUNT = {'user_getter': 0, 'follower_getter': 0, 'graph_repos_stars': 0, 'recursive_loc': 0, 'graph_commits': 0, 'loc_query': 0}
+OWNER_ID = {}
+GITHUB_API_SEMAPHORE = asyncio.Semaphore(int(os.environ.get('GITHUB_API_CONCURRENCY', '4')))
 
 
 def daily_readme(birthday):
@@ -57,10 +62,11 @@ async def simple_request(session, func_name, query, variables):
     """
     Returns a request, or raises an Exception if the response does not succeed.
     """
-    async with session.post('https://api.github.com/graphql', json={'query': query, 'variables':variables}, headers=HEADERS) as response:
-        if response.status == 200:
-            return await response.json()
-        raise Exception(func_name, ' has failed with a', response.status, await response.text(), QUERY_COUNT)
+    async with GITHUB_API_SEMAPHORE:
+        async with session.post('https://api.github.com/graphql', json={'query': query, 'variables':variables}, headers=HEADERS) as response:
+            if response.status == 200:
+                return await response.json()
+            raise Exception(func_name, ' has failed with a', response.status, await response.text(), QUERY_COUNT)
 
 
 async def graph_commits(session, start_date, end_date):
@@ -160,7 +166,7 @@ async def calculate_current_streak(session):
         return streak
 
     except Exception as e:
-        print(f"Error calculating streak: {e}")
+        logger.exception("Failed to calculate current streak")
         return 0
 
 
@@ -193,12 +199,20 @@ async def graph_repos_stars(session, count_type, owner_affiliation, cursor=None,
     }'''
     variables = {'owner_affiliation': owner_affiliation, 'login': USER_NAME, 'cursor': cursor}
     request = await simple_request(session, graph_repos_stars.__name__, query, variables)
-    if request['data']['user']['repositories']['pageInfo']['hasNextPage']:
-        return await graph_repos_stars(session, count_type, owner_affiliation, request['data']['user']['repositories']['pageInfo']['endCursor'], add_loc, del_loc)
+    repositories = request['data']['user']['repositories']
+    current_stars = stars_counter(repositories['edges'])
+
+    if repositories['pageInfo']['hasNextPage']:
+        if count_type == 'repos':
+            return await graph_repos_stars(session, count_type, owner_affiliation, repositories['pageInfo']['endCursor'], add_loc, del_loc)
+        if count_type == 'stars':
+            next_page_stars = await graph_repos_stars(session, count_type, owner_affiliation, repositories['pageInfo']['endCursor'], add_loc, del_loc)
+            return current_stars + next_page_stars
+
     if count_type == 'repos':
-        return request['data']['user']['repositories']['totalCount']
+        return repositories['totalCount']
     elif count_type == 'stars':
-        return stars_counter(request['data']['user']['repositories']['edges'])
+        return current_stars
 
 
 async def recursive_loc(session, owner, repo_name, data, cache_comment, addition_total=0, deletion_total=0, my_commits=0, cursor=None):
@@ -255,7 +269,7 @@ async def recursive_loc(session, owner, repo_name, data, cache_comment, addition
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             if attempt == 2:
                 raise e
-            print(f"Attempt {attempt + 1} failed, retrying... Error: {e}")
+            logger.warning("Retry {attempt} failed in recursive_loc: {error}", attempt=attempt + 1, error=e)
             await asyncio.sleep(2 ** attempt)
 
 
@@ -336,7 +350,7 @@ async def cache_builder(session, edges, comment_size, force_cache, loc_add=0, lo
                 filtered_edges.append(edge)
         edges = filtered_edges
         # print(edges)
-        print(f"Filtered out {len(excluded_repos)} excluded repositories: {', '.join(excluded_repos)}")
+        logger.info("Filtered out {count} excluded repositories: {repos}", count=len(excluded_repos), repos=', '.join(excluded_repos))
 
     cached = True # Assume all repositories are cached
     filename = 'cache/'+hashlib.sha256(USER_NAME.encode('utf-8')).hexdigest()+'.txt' # Create a unique filename for each user
@@ -358,18 +372,29 @@ async def cache_builder(session, edges, comment_size, force_cache, loc_add=0, lo
 
     cache_comment = data[:comment_size] # save the comment block
     data = data[comment_size:] # remove those lines
-    for index in range(len(edges)):
+    total_repos = len(edges)
+    updated_repos = 0
+    logger.info("LOC cache check started: {total} repositories", total=total_repos)
+
+    for index in range(total_repos):
         repo_hash, commit_count, *__ = data[index].split()
-        if repo_hash == hashlib.sha256(edges[index]['node']['nameWithOwner'].encode('utf-8')).hexdigest():
+        repo_full_name = edges[index]['node']['nameWithOwner']
+        if repo_hash == hashlib.sha256(repo_full_name.encode('utf-8')).hexdigest():
             try:
                 if int(commit_count) != edges[index]['node']['defaultBranchRef']['target']['history']['totalCount']:
                     # if commit count has changed, update loc for that repo
-                    owner, repo_name = edges[index]['node']['nameWithOwner'].split('/')
+                    owner, repo_name = repo_full_name.split('/')
+                    updated_repos += 1
+                    logger.debug("LOC refresh {current}/{total}: {repo}", current=index + 1, total=total_repos, repo=repo_full_name)
 
                     loc = await recursive_loc(session, owner, repo_name, data, cache_comment)
                     data[index] = repo_hash + ' ' + str(edges[index]['node']['defaultBranchRef']['target']['history']['totalCount']) + ' ' + str(loc[2]) + ' ' + str(loc[0]) + ' ' + str(loc[1]) + '\n'
+                elif (index + 1) % 25 == 0:
+                    logger.debug("LOC cache check progress: {current}/{total}", current=index + 1, total=total_repos)
             except TypeError: # If the repo is empty
                 data[index] = repo_hash + ' 0 0 0 0\n'
+
+    logger.info("LOC cache check finished: {updated}/{total} repositories refreshed", updated=updated_repos, total=total_repos)
     with open(filename, 'w') as f:
         f.writelines(cache_comment)
         f.writelines(data)
@@ -424,7 +449,7 @@ async def force_close_file(data, cache_comment):
     with open(filename, 'w') as f:
         f.writelines(cache_comment)
         f.writelines(data)
-    print('There was an error while writing to the cache file. The file,', filename, 'has had the partial data saved and closed.')
+    logger.exception("Failed writing cache file: {filename}. Partial data saved and file closed.", filename=filename)
 
 
 def stars_counter(data):
@@ -443,25 +468,65 @@ def svg_overwrite(filename, lastfm_svg, ascii_svg, github_stats_svg, most_used_l
     tree = etree.parse(filename)
     root = tree.getroot()
 
+    def overwrite_identity_header():
+        header_text_candidates = root.xpath("//*[local-name()='text' and @x='390' and @y='30']")
+        header_text = header_text_candidates[0] if header_text_candidates else None
+        if header_text is None:
+            logger.warning("Top identity header not found in {filename}", filename=filename)
+            return
+
+        header_tspan_candidates = header_text.xpath("./*[local-name()='tspan']")
+        header_tspan = header_tspan_candidates[0] if header_tspan_candidates else None
+        if header_tspan is None:
+            logger.warning("Top identity header tspan not found in {filename}", filename=filename)
+            return
+
+        identity_title = SVG_HEADER_IDENTITY
+        header_tspan.text = identity_title
+        header_tspan.tail = make_header_tail(identity_title)
+
+    def normalize_header_tails():
+        header_nodes = root.xpath("//*[local-name()='text' and @x='390']/*[local-name()='tspan' and starts-with(normalize-space(text()), '- ')]")
+        for tspan in header_nodes:
+            title = (tspan.text or '').strip()
+            tspan.tail = make_header_tail(title)
+
+        identity_tspan_nodes = root.xpath("//*[local-name()='text' and @x='390' and @y='30']/*[local-name()='tspan']")
+        if identity_tspan_nodes:
+            identity_tspan_nodes[0].tail = make_header_tail((identity_tspan_nodes[0].text or '').strip())
+
+    def find_element_by_id(element_id):
+        candidates = root.xpath(f"//*[@id='{element_id}']")
+        return candidates[0] if candidates else None
+
+    def ensure_text_fill_by_theme(text_el):
+        if "dark" in filename:
+            text_el.attrib["fill"] = "#c9d1d9"
+        elif "light" in filename:
+            text_el.attrib["fill"] = "#24292f"
+
     def overwrite_blocks(svg_block, name):
         new_text_element = etree.fromstring(svg_block)
-        old_text_element = root.find(f".//*[@id='{name}']")
+        ensure_text_fill_by_theme(new_text_element)
+        old_text_element = find_element_by_id(name)
 
         if old_text_element is not None:
             parent = old_text_element.getparent()
             parent.replace(old_text_element, new_text_element)
         else:
-            print(f"Not found {name} class")
-
-    overwrite_blocks(lastfm_svg,"lastfm_block")
-    overwrite_blocks(ascii_svg,"ascii")
-    overwrite_blocks(github_stats_svg,"github_stats")
-    overwrite_blocks(most_used_lang_svg,"languages_block")
+            logger.warning("SVG element with id={name} not found", name=name)
 
     def replace_colors(tree, mapping: dict):
         for old, new in mapping.items():
             for el in tree.xpath(f'//*[@fill="{old}"]'):
                 el.attrib["fill"] = new
+
+    overwrite_identity_header()
+    overwrite_blocks(lastfm_svg,"lastfm_block")
+    overwrite_blocks(ascii_svg,"ascii")
+    overwrite_blocks(github_stats_svg,"github_stats")
+    overwrite_blocks(most_used_lang_svg,"languages_block")
+    normalize_header_tails()
 
     if "dark" in filename:
         replace_colors(tree, {
@@ -471,6 +536,7 @@ def svg_overwrite(filename, lastfm_svg, ascii_svg, github_stats_svg, most_used_l
             "#c9d1d9": "#24292f"})
 
     tree.write(filename, encoding='utf-8', xml_declaration=True, )
+
 
 def commit_counter(comment_size):
     """
@@ -560,34 +626,59 @@ def formatter(query_type, difference, funct_return=False, whitespace=0):
     Prints a formatted time differential
     Returns formatted result if whitespace is specified, otherwise returns raw result
     """
-    print('{:<23}'.format('   ' + query_type + ':'), sep='', end='')
-    print('{:>12}'.format('%.4f' % difference + ' s ')) if difference > 1 else print('{:>12}'.format('%.4f' % (difference * 1000) + ' ms'))
+    value = '{:>12}'.format('%.4f' % difference + ' s ') if difference > 1 else '{:>12}'.format('%.4f' % (difference * 1000) + ' ms')
+    logger.info('{label}{value}', label='{: <23}'.format('   ' + query_type + ':'), value=value)
     if whitespace:
         return f"{'{:,}'.format(funct_return): <{whitespace}}"
-    return funct_return
-
-
 async def main():
-    print('Calculation times:')
+    logger.info('Calculation times:')
     async with aiohttp.ClientSession(proxy=PROXY) as session:
         user_data, user_time = await perf_counter(user_getter, session, USER_NAME)
         global OWNER_ID
         OWNER_ID, acc_date = user_data
         formatter('account data', user_time)
+
         age_data, age_time = await perf_counter(daily_readme, datetime.datetime(2002, 7, 5))
         formatter('age calculation', age_time)
-        total_loc, loc_time = await perf_counter(loc_query, session, ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER'], 7)
+
+        metrics_tasks = [
+            perf_counter(loc_query, session, ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER'], 7),
+            perf_counter(commit_counter, 7),
+            perf_counter(graph_repos_stars, session, 'stars', ['OWNER']),
+            perf_counter(graph_repos_stars, session, 'repos', ['OWNER']),
+            perf_counter(graph_repos_stars, session, 'repos', ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER']),
+            perf_counter(follower_getter, session, USER_NAME),
+            perf_counter(lastfm_getter, session, LASTFM_TOKEN, LASTFM_USER),
+            get_recent_commits_and_streak(session),
+            get_most_used_languages(
+                session=session,
+                user_name='xxspell',
+                headers=HEADERS,
+                excluded_repos=get_excluded_list(EXCLUDED_REPOS),
+                excluded_languages=get_excluded_list(EXCLUDED_LANGUAGES),
+            ),
+        ]
+
+        (
+            (total_loc, loc_time),
+            (commit_data, commit_time),
+            (star_data, star_time),
+            (repo_data, repo_time),
+            (contrib_data, contrib_time),
+            (follower_data, follower_time),
+            (lastfm_svg, lastfm_time),
+            (recent_commits, streak),
+            most_used_languages,
+        ) = await asyncio.gather(*metrics_tasks)
+
         formatter('LOC (cached)', loc_time) if total_loc[-1] else formatter('LOC (no cache)', loc_time)
-        commit_data, commit_time = await perf_counter(commit_counter, 7)
         formatter('commit calculation', commit_time)
-        star_data, star_time = await perf_counter(graph_repos_stars, session, 'stars', ['OWNER'])
         formatter('star calculation', star_time)
-        repo_data, repo_time = await perf_counter(graph_repos_stars, session, 'repos', ['OWNER'])
         formatter('repo calculation', repo_time)
-        contrib_data, contrib_time = await perf_counter(graph_repos_stars, session, 'repos', ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER'])
         formatter('contri calculation', contrib_time)
-        follower_data, follower_time = await perf_counter(follower_getter, session, USER_NAME)
         formatter('follower calculation', follower_time)
+        formatter('lastfm calculation', lastfm_time)
+
         if OWNER_ID == {'id': 'MDQ6VXNlcjc0OTcyMzk'}:
             archived_data = add_archive()
             for index in range(len(total_loc)-1):
@@ -595,50 +686,58 @@ async def main():
             contrib_data += archived_data[-1]
             commit_data += int(archived_data[-2])
 
-        for index in range(len(total_loc)-1): total_loc[index] = '{:,}'.format(total_loc[index]) # format added, deleted, and total LOC
-
-        lastfm_svg, lastfm_time = await perf_counter(lastfm_getter, session, LASTFM_TOKEN, LASTFM_USER)
-        formatter('lastfm calculation', lastfm_time)
+        for index in range(len(total_loc)-1):
+            total_loc[index] = '{:,}'.format(total_loc[index])
 
         def ascii_getter():
             root = etree.parse('dark_mode.svg').getroot()
             filename = root.get('data-filename')
-            return ascii_to_svg(load_ascii_from_file(get_random_file('arts/', filename)), 15, 30, "#c9d1d9")
+            return ascii_to_svg(load_ascii_from_file(get_random_file('arts/', filename)), 15, 30, '#c9d1d9')
 
         ascii_svg, ascii_time = await perf_counter(ascii_getter)
-        formatter('ascii calculation', lastfm_time)
-
-        recent_commits, streak = await get_recent_commits_and_streak(session)
+        formatter('ascii calculation', ascii_time)
 
         def github_stats_getter():
             loc_data = total_loc[:-1]
-            return generate_github_stats_svg(x=390, y=390, fill_color="#c9d1d9", commit_data=commit_data, star_data=star_data, repo_data=repo_data, contrib_data=contrib_data, follower_data=follower_data, loc_total=loc_data[2], loc_add=loc_data[0], loc_del=loc_data[1], recent_commit_data=recent_commits, streak_data=streak)
+            return generate_github_stats_svg(
+                x=390,
+                y=390,
+                fill_color='#c9d1d9',
+                commit_data=commit_data,
+                star_data=star_data,
+                repo_data=repo_data,
+                contrib_data=contrib_data,
+                follower_data=follower_data,
+                loc_total=loc_data[2],
+                loc_add=loc_data[0],
+                loc_del=loc_data[1],
+                recent_commit_data=recent_commits,
+                streak_data=streak,
+            )
 
         github_stats_svg, github_stats_time = await perf_counter(github_stats_getter)
         formatter('github stats svg calculation', github_stats_time)
 
-        async def most_used_lang_getter():
-            most_used_lang_svg = generate_languages_svg(x=390, y=220, fill_color="#c9d1d9", languages=await get_most_used_languages(session=session, user_name="xxspell",headers=HEADERS,excluded_repos=get_excluded_list(EXCLUDED_REPOS), excluded_languages=get_excluded_list(EXCLUDED_LANGUAGES)))
-            return most_used_lang_svg
+        def most_used_lang_getter():
+            return generate_languages_svg(
+                x=390,
+                y=220,
+                fill_color='#c9d1d9',
+                languages=most_used_languages,
+            )
 
         most_used_lang_svg, most_used_lang_time = await perf_counter(most_used_lang_getter)
         formatter('most lang svg calculation', most_used_lang_time)
 
-        svg_overwrite('dark_mode.svg',  lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg)
+        svg_overwrite('dark_mode.svg', lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg)
         svg_overwrite('light_mode.svg', lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg)
 
-        # move cursor to override 'Calculation times:' with 'Total function time:' and the total function time, then move cursor back
-        print(
-            '\x1b[15F',
-            '{:<21}'.format('Total function time:'),
-            '{:>11}'.format('%.4f' % (
-                        user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time + ascii_time + github_stats_time + most_used_lang_time)),
-            ' s ' + '\x1b[E' * 15,
-            sep=''
-        )
+        total_time = user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time + ascii_time + github_stats_time + most_used_lang_time
+        logger.info('{label}{value}', label='{:<21}'.format('Total function time:'), value='{:>11}'.format('%.4f' % total_time) + ' s')
 
-        print('Total GitHub GraphQL API calls:', '{:>3}'.format(sum(QUERY_COUNT.values())))
-        for funct_name, count in QUERY_COUNT.items(): print('{:<28}'.format('   ' + funct_name + ':'), '{:>6}'.format(count))
+        logger.info('Total GitHub GraphQL API calls: {count:>3}', count=sum(QUERY_COUNT.values()))
+        for funct_name, count in QUERY_COUNT.items():
+            logger.info('{name:<28} {count:>6}', name='   ' + funct_name + ':', count=count)
 
 
 

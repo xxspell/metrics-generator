@@ -1,5 +1,8 @@
 import asyncio
 
+from loguru import logger
+from svg_header import make_header_tail
+
 LANGUAGE_COLORS = {
     'Python': '#3572A5',
     'JavaScript': '#c9bb4d',
@@ -98,7 +101,7 @@ async def get_most_used_languages(session, user_name, headers, excluded_repos=No
     for repo in repos:
         owner, name = repo.split('/')
         async with session.get(f'https://api.github.com/repos/{owner}/{name}/languages', headers=headers) as response:
-            print(f"{owner}/{name} {await response.json()}")
+            logger.debug("Fetched languages for {owner}/{repo}: {payload}", owner=owner, repo=name, payload=await response.json())
             if response.status == 200:
                 langs = await response.json()
                 for lang, bytes_count in langs.items():
@@ -126,7 +129,7 @@ async def get_most_used_languages(session, user_name, headers, excluded_repos=No
 
 def generate_languages_svg(x, y, fill_color, languages):
     svg = f'''<text x="{x}" y="{y}" fill="{fill_color}" id="languages_block">
-    <tspan x="{x}" y="{y}">- Most used languages</tspan> -—————————————————————————————-—-'''
+    <tspan x="{x}" y="{y}">- Most used languages</tspan>{make_header_tail('- Most used languages')}'''
 
     current_y = y + 20
     max_line_length = 59

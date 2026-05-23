@@ -2,6 +2,8 @@ import traceback
 from datetime import datetime
 from typing import Dict, List, Any
 
+from svg_header import make_header_tail
+
 
 def parse_tracks(data: Dict[str, Any]) -> Dict[str, Any]:
     tracks_data = data.get("recenttracks", {})
@@ -49,7 +51,7 @@ def generate_lastfm_svg(scrobbles, start_x=390, start_y=60, max_line_length=60):
     svg_parts.append(
         f'<text x="{start_x}" y="{header_y}" fill="#c9d1d9" id="lastfm_block">')
     svg_parts.append(
-        f'<tspan x="{start_x}" y="{header_y}">- Last.fm Recent Scrobbles</tspan> -——————————————————————————————————-—-')
+        f'<tspan x="{start_x}" y="{header_y}">- Last.fm Recent Scrobbles</tspan>{make_header_tail('- Last.fm Recent Scrobbles')}')
     current_y = header_y + 20
 
     min_dots_count = 1
