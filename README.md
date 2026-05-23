@@ -41,6 +41,7 @@ Main variables:
 - `EXCLUDED_REPOS`: comma-separated repos to exclude (optional)
 - `EXCLUDED_LANGUAGES`: comma-separated languages to exclude (optional)
 - `PROXY`: proxy URL (optional)
+- `SVG_HEADER_IDENTITY`: custom top SVG header identity (optional, default: `USER_NAME`)
 
 Docker scheduler variables:
 
