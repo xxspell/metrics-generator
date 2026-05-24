@@ -24,7 +24,7 @@ esac
   echo "SHELL=/bin/sh"
   echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-  for var in ACCESS_TOKEN TARGET_REPOSITORY USER_NAME PROXY EXCLUDED_REPOS LASTFM_TOKEN LASTFM_USER EXCLUDED_LANGUAGES GIT_USER_NAME GIT_USER_EMAIL TARGET_BRANCH; do
+  for var in ACCESS_TOKEN TARGET_REPOSITORY USER_NAME PROXY EXCLUDED_REPOS LASTFM_TOKEN LASTFM_USER EXCLUDED_LANGUAGES GIT_USER_NAME GIT_USER_EMAIL TARGET_BRANCH SVG_HEADER_IDENTITY; do
     val="$(printenv "$var" || true)"
     if [ -n "$val" ]; then
       escaped="$(printf '%s' "$val" | sed "s/'/'\"'\"'/g")"
