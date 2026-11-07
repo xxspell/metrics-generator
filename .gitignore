@@ -225,3 +225,12 @@ arts/
 cache/
 /CLAUDE.md
 /.serena
+
+# Offline mock generator output
+mock_output/
+
+# macOS
+.DS_Store
+
+# Art Studio drafts (local only, never published)
+/.studio/

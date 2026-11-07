@@ -5,7 +5,7 @@
 # GitHub
 .github/
 
-# Документация
+# Docs
 *.md
 !README.md
 
@@ -33,7 +33,7 @@ coverage.xml
 .venv/
 venv/
 
-# Node.js (если есть)
+# Node.js (if any)
 node_modules/
 npm-debug.log*
 
@@ -46,20 +46,20 @@ npm-debug.log*
 ehthumbs.db
 Thumbs.db
 
-# Временные файлы
+# Temporary files
 *.tmp
 *.temp
 .cache/
 
-# Логи
+# Logs
 *.log
 
-# Конфигурация IDE
+# IDE config
 *.swp
 *.swo
 *~
 
-# Сгенерированные файлы метрик (не включать в контекст)
+# Generated metrics files (keep out of the build context)
 cache/
 arts/
 *.svg
