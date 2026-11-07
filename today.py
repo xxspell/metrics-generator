@@ -652,7 +652,7 @@ async def main():
             get_recent_commits_and_streak(session),
             get_most_used_languages(
                 session=session,
-                user_name='xxspell',
+                user_name=USER_NAME,
                 headers=HEADERS,
                 excluded_repos=get_excluded_list(EXCLUDED_REPOS),
                 excluded_languages=get_excluded_list(EXCLUDED_LANGUAGES),
