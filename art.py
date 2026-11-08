@@ -29,7 +29,10 @@ def ascii_to_svg(data, x, y, fill_color):
     return '\n'.join(svg_parts)
 
 def get_random_file(folder_path: str, latest_filename: str | None = None) -> str:
-    files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+    files = [
+        f for f in os.listdir(folder_path)
+        if f.endswith('.txt') and os.path.isfile(os.path.join(folder_path, f))
+    ]
     if not files:
         raise FileNotFoundError("There are no files in the folder")
 
