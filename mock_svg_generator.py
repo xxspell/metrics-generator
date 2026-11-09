@@ -1,9 +1,10 @@
 import argparse
-import os
 from pathlib import Path
 
 from lxml import etree
+from loguru import logger
 
+import art_engine
 from art import ascii_to_svg, load_ascii_from_file
 from github_stats import generate_github_stats_svg
 from languages_svg import generate_languages_svg
@@ -45,13 +46,25 @@ def normalize_header_tails(root):
         tspan.tail = make_header_tail(title)
 
 
-def build_mock_ascii_svg(fill_color: str):
-    arts_dir = Path("arts")
-    files = sorted([p for p in arts_dir.iterdir() if p.is_file()])
+def build_mock_ascii_svg(theme: str, fill_color: str, art_id: str | None = None):
+    """Prefer a built engine/image art; fall back to the first legacy text art."""
+    manifest = art_engine.load_manifest()
+    if manifest:
+        candidates = art_engine.enabled_arts(manifest, types=art_engine.RASTER_TYPES)
+        if art_id:
+            art = art_engine.find_art(manifest, art_id)
+            if art is None:
+                raise FileNotFoundError(f"Art id not found in manifest: {art_id}")
+            candidates = [art]
+        for art in candidates:
+            fragment = art_engine.build_fragment(manifest, art, theme)
+            if fragment:
+                return fragment
+            logger.warning(f"Asset for art '{art['id']}' is not built; run `uv run art_engine.py build {art['id']}`")
+    files = sorted(p for p in Path("arts").glob("*.txt") if p.is_file() and p.stat().st_size)
     if not files:
-        raise FileNotFoundError("No files found in arts/")
-    art_file = str(files[0])
-    return ascii_to_svg(load_ascii_from_file(art_file), 15, 30, fill_color)
+        raise FileNotFoundError("No usable arts found (manifest empty and no arts/*.txt)")
+    return ascii_to_svg(load_ascii_from_file(str(files[0])), 15, 30, fill_color)
 
 
 def build_mock_lastfm_svg():
@@ -102,18 +115,29 @@ def build_mock_github_stats_svg(fill_color: str):
     )
 
 
-def generate_mock_file(template_path: Path, output_path: Path, fill_color: str, identity: str):
-    tree = etree.parse(str(template_path))
+THEME_FILL = {"dark": "#c9d1d9", "light": "#24292f"}
+
+
+def build_mock_svg(theme: str, identity: str, art_id: str | None = None, ascii_fragment: str | None = None,
+                   template_dir: Path = Path(".")) -> bytes:
+    """Full profile card on mock data. `ascii_fragment` overrides the art block
+    (used by the Art Studio to preview an unpublished draft)."""
+    fill_color = THEME_FILL[theme]
+    tree = etree.parse(str(template_dir / f"{theme}_mode.svg"))
     root = tree.getroot()
 
     overwrite_identity_header(root, identity)
     overwrite_block(root, build_mock_lastfm_svg(), "lastfm_block")
-    overwrite_block(root, build_mock_ascii_svg(fill_color), "ascii")
+    overwrite_block(root, ascii_fragment or build_mock_ascii_svg(theme, fill_color, art_id), "ascii")
     overwrite_block(root, build_mock_languages_svg(fill_color), "languages_block")
     overwrite_block(root, build_mock_github_stats_svg(fill_color), "github_stats")
     normalize_header_tails(root)
+    return etree.tostring(tree, encoding="utf-8", xml_declaration=True)
 
-    tree.write(str(output_path), encoding="utf-8", xml_declaration=True)
+
+def generate_mock_file(template_path: Path, output_path: Path, fill_color: str, identity: str, art_id: str | None = None):
+    theme = "dark" if "dark" in str(template_path) else "light"
+    output_path.write_bytes(build_mock_svg(theme, identity, art_id, template_dir=template_path.parent))
 
 
 def main():
@@ -124,6 +148,7 @@ def main():
         default="mock_output",
         help="Directory for generated mock SVG files",
     )
+    parser.add_argument("--art-id", default=None, help="Force a manifest art id (engine/image) for the preview")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -134,12 +159,14 @@ def main():
         output_path=out_dir / "dark_mode.mock.svg",
         fill_color="#c9d1d9",
         identity=args.identity,
+        art_id=args.art_id,
     )
     generate_mock_file(
         template_path=Path("light_mode.svg"),
         output_path=out_dir / "light_mode.mock.svg",
         fill_color="#24292f",
         identity=args.identity,
+        art_id=args.art_id,
     )
 
     print(f"Generated: {out_dir / 'dark_mode.mock.svg'}")

@@ -74,12 +74,12 @@ runs:
 
         # Copy cache directory if it exists
         if [ -d "target-repo-temp/cache" ]; then
-          cp -r target-repo-temp/cache . || echo "No cache directory found"
+          mkdir -p cache && cp -r target-repo-temp/cache/. cache/ || echo "No cache directory found"
         fi
 
         # Copy arts directory if it exists
         if [ -d "target-repo-temp/arts" ]; then
-          cp -r target-repo-temp/arts . || echo "No arts directory found"
+          mkdir -p arts && cp -r target-repo-temp/arts/. arts/ || echo "No arts directory found"
         fi
 
         # Copy SVG templates if they exist
@@ -105,6 +105,10 @@ runs:
       run: uv sync
       shell: bash
 
+    - name: Build ASCII art assets
+      run: uv run art_engine.py build
+      shell: bash
+
     - name: Run metrics generator
       run: uv run a.py
       env:
@@ -122,12 +126,18 @@ runs:
         cd target-repo-temp
 
         # Copy updated files back to target repository
+        mkdir -p cache arts
         if [ -d "../cache" ]; then
-          cp -r ../cache . || echo "No cache directory to copy back"
+          cp -r ../cache/. cache/ || echo "No cache directory to copy back"
         fi
 
         if [ -d "../arts" ]; then
-          cp -r ../arts . || echo "No arts directory to copy back"
+          # arts/gen is fully owned by `art_engine.py build` (it started from this
+          # copy and garbage-collected stale assets), so mirror it to propagate deletions.
+          if [ -d "../arts/gen" ]; then
+            rm -rf arts/gen
+          fi
+          cp -r ../arts/. arts/ || echo "No arts directory to copy back"
         fi
 
         if [ -f "../dark_mode.svg" ]; then
@@ -139,8 +149,9 @@ runs:
         fi
 
 
-        # Check if there are any changes
-        if git diff --quiet && git diff --staged --quiet; then
+        # Check if there are any changes (--porcelain also sees untracked files,
+        # e.g. new arts/gen assets, unlike `git diff`)
+        if [ -z "$(git status --porcelain)" ]; then
           echo "No changes to commit"
           exit 0
         fi

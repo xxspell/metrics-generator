@@ -28,10 +28,10 @@ git clone --depth 1 "https://x-access-token:${ACCESS_TOKEN}@github.com/${TARGET_
 # Copy required files from target repository
 mkdir -p cache arts
 if [ -d "$TARGET_DIR/cache" ]; then
-  cp -r "$TARGET_DIR/cache" . || echo "No cache directory found"
+  cp -r "$TARGET_DIR/cache/." cache/ || echo "No cache directory found"
 fi
 if [ -d "$TARGET_DIR/arts" ]; then
-  cp -r "$TARGET_DIR/arts" . || echo "No arts directory found"
+  cp -r "$TARGET_DIR/arts/." arts/ || echo "No arts directory found"
 fi
 if [ -f "$TARGET_DIR/dark_mode.svg" ]; then
   cp "$TARGET_DIR/dark_mode.svg" . || echo "No dark_mode.svg found"
@@ -40,15 +40,24 @@ if [ -f "$TARGET_DIR/light_mode.svg" ]; then
   cp "$TARGET_DIR/light_mode.svg" . || echo "No light_mode.svg found"
 fi
 
+# Build ASCII art assets from manifest (no-op when all fresh)
+uv run art_engine.py build
+
 # Run the metrics generator
 uv run a.py
 
 # Copy updated files back to target repository
+mkdir -p "$TARGET_DIR/cache" "$TARGET_DIR/arts"
 if [ -d "cache" ]; then
-  cp -r cache "$TARGET_DIR" || echo "No cache directory to copy back"
+  cp -r cache/. "$TARGET_DIR/cache/" || echo "No cache directory to copy back"
 fi
 if [ -d "arts" ]; then
-  cp -r arts "$TARGET_DIR" || echo "No arts directory to copy back"
+  # arts/gen is fully owned by `art_engine.py build` (it started from the target's
+  # copy and garbage-collected stale assets), so mirror it to propagate deletions.
+  if [ -d "arts/gen" ]; then
+    rm -rf "$TARGET_DIR/arts/gen"
+  fi
+  cp -r arts/. "$TARGET_DIR/arts/" || echo "No arts directory to copy back"
 fi
 if [ -f "dark_mode.svg" ]; then
   cp dark_mode.svg "$TARGET_DIR" || echo "No dark_mode.svg to copy back"
@@ -59,7 +68,8 @@ fi
 
 # Commit and push changes
 cd "$TARGET_DIR"
-if git diff --quiet && git diff --staged --quiet; then
+# --porcelain also sees untracked files (new arts/gen assets), unlike `git diff`
+if [ -z "$(git status --porcelain)" ]; then
   echo "No changes to commit"
 else
   # Configure git

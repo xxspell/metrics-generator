@@ -11,6 +11,7 @@ from lxml import etree
 from loguru import logger
 
 from art import load_ascii_from_file, ascii_to_svg, get_random_file
+import art_engine
 from github_stats import generate_github_stats_svg
 from languages_svg import get_most_used_languages, generate_languages_svg
 from lastfm import lastfm_getter
@@ -461,9 +462,12 @@ def stars_counter(data):
     return total_stars
 
 
-def svg_overwrite(filename, lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg):
+def svg_overwrite(filename, lastfm_svg, ascii_svgs, github_stats_svg, most_used_lang_svg, art_meta=None):
     """
     Parse SVG files and update elements with my age, commits, stars, repositories, and lines written
+
+    ascii_svgs is a {theme: svg_fragment} mapping; art_meta carries the picked
+    art id/source so the next run can avoid repeating it via root attributes.
     """
     tree = etree.parse(filename)
     root = tree.getroot()
@@ -521,12 +525,22 @@ def svg_overwrite(filename, lastfm_svg, ascii_svg, github_stats_svg, most_used_l
             for el in tree.xpath(f'//*[@fill="{old}"]'):
                 el.attrib["fill"] = new
 
+    theme = 'dark' if 'dark' in filename else 'light'
+
     overwrite_identity_header()
     overwrite_blocks(lastfm_svg,"lastfm_block")
-    overwrite_blocks(ascii_svg,"ascii")
+    overwrite_blocks(ascii_svgs[theme],"ascii")
     overwrite_blocks(github_stats_svg,"github_stats")
     overwrite_blocks(most_used_lang_svg,"languages_block")
     normalize_header_tails()
+
+    if art_meta is not None:
+        if art_meta.get('art_id'):
+            root.set('data-art-id', art_meta['art_id'])
+        if art_meta.get('source'):
+            root.set('data-filename', art_meta['source'])
+        else:
+            root.attrib.pop('data-filename', None)
 
     if "dark" in filename:
         replace_colors(tree, {
@@ -690,11 +704,36 @@ async def main():
             total_loc[index] = '{:,}'.format(total_loc[index])
 
         def ascii_getter():
-            root = etree.parse('dark_mode.svg').getroot()
-            filename = root.get('data-filename')
-            return ascii_to_svg(load_ascii_from_file(get_random_file('arts/', filename)), 15, 30, '#c9d1d9')
+            """Pick a manifest art; returns ({theme: svg_fragment}, meta).
 
-        ascii_svg, ascii_time = await perf_counter(ascii_getter)
+            engine/image arts embed pre-built raster assets (see art_engine);
+            text arts and missing assets fall back to legacy inline rendering.
+            """
+            root = etree.parse('dark_mode.svg').getroot()
+            avoid = root.get('data-art-id')
+            if avoid is None and root.get('data-filename'):
+                avoid = os.path.splitext(os.path.basename(root.get('data-filename')))[0]
+
+            manifest = art_engine.load_manifest()
+            if manifest:
+                art = art_engine.pick_art(manifest, avoid_id=avoid)
+                if art is not None:
+                    if art['type'] in art_engine.RASTER_TYPES:
+                        fragments = {t: art_engine.build_fragment(manifest, art, t) for t in art_engine.THEMES}
+                        if fragments['dark'] and fragments['light']:
+                            return fragments, {'art_id': art['id']}
+                        logger.warning("Assets for art '{id}' are not built; run `uv run art_engine.py build`. Falling back to a text art", id=art['id'])
+                    text_arts = art_engine.enabled_arts(manifest, types=('text',))
+                    if text_arts:
+                        text_art = art_engine.pick_art({'arts': text_arts}, avoid_id=avoid)
+                        fragment = ascii_to_svg(load_ascii_from_file(text_art['source']), 15, 30, '#c9d1d9')
+                        return {'dark': fragment, 'light': fragment}, {'art_id': text_art['id'], 'source': text_art['source']}
+
+            filename = root.get('data-filename')
+            fragment = ascii_to_svg(load_ascii_from_file(get_random_file('arts/', filename)), 15, 30, '#c9d1d9')
+            return {'dark': fragment, 'light': fragment}, ({'source': filename} if filename else {})
+
+        (ascii_svgs, ascii_meta), ascii_time = await perf_counter(ascii_getter)
         formatter('ascii calculation', ascii_time)
 
         def github_stats_getter():
@@ -729,8 +768,8 @@ async def main():
         most_used_lang_svg, most_used_lang_time = await perf_counter(most_used_lang_getter)
         formatter('most lang svg calculation', most_used_lang_time)
 
-        svg_overwrite('dark_mode.svg', lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg)
-        svg_overwrite('light_mode.svg', lastfm_svg, ascii_svg, github_stats_svg, most_used_lang_svg)
+        svg_overwrite('dark_mode.svg', lastfm_svg, ascii_svgs, github_stats_svg, most_used_lang_svg, art_meta=ascii_meta)
+        svg_overwrite('light_mode.svg', lastfm_svg, ascii_svgs, github_stats_svg, most_used_lang_svg, art_meta=ascii_meta)
 
         total_time = user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time + lastfm_time + ascii_time + github_stats_time + most_used_lang_time
         logger.info('{label}{value}', label='{:<21}'.format('Total function time:'), value='{:>11}'.format('%.4f' % total_time) + ' s')
