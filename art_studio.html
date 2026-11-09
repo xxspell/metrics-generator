@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Art Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#141118; --panel:#1c1822; --raise:#251f2c; --line:#322b3a; --text:#ebe6f0; --muted:#9c93a8;
+  --safelight:#ff8a3d; --safelight-ink:#2a1405; --ok:#6fcf97; --warn:#f2c94c; --bad:#ff6b6b;
+  --gh-dark:#161b22; --gh-light:#f6f8fa;
+  --sans:Manrope,system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--ink);color:var(--text);font:14px/1.5 var(--sans);display:grid;grid-template-columns:268px minmax(0,1fr) 316px;height:100vh;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--safelight);outline-offset:2px}
+h1,h2,h3{margin:0;font-weight:700}
+.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+
+/* library */
+#library{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#library header{padding:18px 16px 12px}
+#library h1{font-size:17px;letter-spacing:-.01em}
+#library h1 small{display:block;font-weight:500;color:var(--muted);font-size:12px;letter-spacing:0}
+#drop{margin:0 16px 10px;border:1.5px dashed var(--line);border-radius:12px;padding:14px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s}
+#drop.over,#drop:hover{border-color:var(--safelight);color:var(--text);background:rgba(255,138,61,.06)}
+#drop strong{color:var(--text);font-weight:600}
+#urlform{display:flex;gap:6px;margin:0 16px 14px}
+#urlform input{flex:1;min-width:0;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+#rotation{margin:0 16px 12px;padding:10px 12px 8px;background:var(--ink);border:1px solid var(--line);border-radius:10px}
+#rotation .ctl{margin:0}
+#rotation .hint{margin:4px 0 0}
+#cards{flex:1;padding:0 12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
+.card{background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:0;cursor:pointer;text-align:left;overflow:hidden;position:relative}
+.card img{display:block;width:100%;aspect-ratio:3/4;object-fit:contain;background:var(--gh-dark)}
+.card span{display:block;padding:5px 8px 6px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.active{border-color:var(--safelight);box-shadow:0 0 0 1px var(--safelight)}
+.card i{position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 2px var(--ink)}
+.card i.pub{background:var(--ok)} .card i.dirty{background:var(--warn)}
+.empty-lib{grid-column:1/-1;color:var(--muted);font-size:13px;padding:8px 4px}
+
+/* stage */
+#stage{display:flex;flex-direction:column;min-width:0;min-height:0}
+#bar{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#title{font:600 15px var(--mono);background:none;border:1px solid transparent;border-radius:7px;padding:3px 7px;margin-left:-8px;width:22ch;max-width:40vw}
+#title:hover{border-color:var(--line)}
+#title:focus{border-color:var(--safelight);background:var(--ink);outline:none}
+#status{font-size:12px;padding:2px 9px;border-radius:99px;background:var(--raise);color:var(--muted)}
+#status.pub{color:var(--ok)} #status.dirty{color:var(--warn)}
+#bar .spacer{flex:1}
+.btn{background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600}
+.btn:hover{border-color:#4a4154}
+.btn.primary{background:var(--safelight);border-color:var(--safelight);color:var(--safelight-ink)}
+.btn.primary:disabled{opacity:.45;cursor:default}
+.btn.quiet{background:none;border-color:transparent;color:var(--muted);font-weight:500}
+.btn.quiet:hover{color:var(--text)}
+.btn.danger:hover{color:var(--bad)}
+label.inline{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+#views{flex:1;display:flex;gap:28px;justify-content:center;align-items:flex-start;padding:26px 20px;min-height:0}
+.view{display:flex;flex-direction:column;align-items:center;gap:8px}
+.frame{width:400px;padding:15px;border-radius:15px;display:flex;justify-content:center;position:relative}
+.frame.dark{background:var(--gh-dark)} .frame.light{background:var(--gh-light)}
+.frame img{display:block;width:370px;height:auto;max-height:calc(100vh - 330px);object-fit:contain;transition:opacity .12s}
+.frame.native img{width:auto;max-height:none}
+.frame.busy img{opacity:.55}
+.meta{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.meta.over{color:var(--warn)}
+#source{border-top:1px solid var(--line);padding:12px 20px;display:flex;gap:16px;align-items:center}
+#cropbox{position:relative;height:120px;flex:none;user-select:none;cursor:crosshair}
+#cropbox img{height:120px;display:block;border-radius:6px;opacity:.85}
+#croprect{position:absolute;border:1.5px solid var(--safelight);background:rgba(255,138,61,.12);pointer-events:none;border-radius:2px}
+#source p{margin:0;color:var(--muted);font-size:13px;max-width:44ch}
+.seg2{grid-template-columns:auto auto;width:auto}.seg2 button{padding:5px 12px}
+#cards-view{flex:1;overflow-y:auto;padding:22px 24px;display:flex;flex-direction:column;align-items:center;gap:22px}
+#cards-view figure{margin:0;width:100%;max-width:985px}
+#cards-view img{display:block;width:100%;height:auto;border-radius:15px;transition:opacity .12s}
+#cards-view img.busy{opacity:.55}
+#cards-view figcaption{font-size:12px;color:var(--muted);margin-top:6px}
+.welcome{margin:auto;max-width:420px;text-align:center;color:var(--muted)}
+.welcome h2{color:var(--text);font-size:22px;margin-bottom:8px;letter-spacing:-.01em}
+
+/* controls */
+#controls{background:var(--panel);border-left:1px solid var(--line);min-height:0;padding:16px 18px 40px}
+#controls h3{font-size:13px;font-weight:700;margin:20px 0 10px;color:var(--text)}
+#controls h3:first-child{margin-top:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--ink);border:1px solid var(--line);border-radius:99px;padding:4px 11px;cursor:pointer;font-size:13px}
+.chip[aria-pressed=true]{border-color:var(--safelight);color:var(--safelight)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
+.seg button{background:none;border:0;border-radius:6px;padding:6px 0;cursor:pointer;color:var(--muted);font-weight:600}
+.seg button[aria-pressed=true]{background:var(--raise);color:var(--text)}
+.ctl{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px;margin:9px 0}
+.ctl label{font-size:13px;color:var(--muted)}
+.ctl output{font:12px var(--mono);color:var(--text)}
+.ctl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--safelight)}
+.toggle{display:flex;justify-content:space-between;align-items:center;margin:9px 0;font-size:13px;color:var(--muted)}
+.toggle input{accent-color:var(--safelight);width:16px;height:16px}
+#chars{width:100%;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:13px var(--mono);margin-top:8px}
+.hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+[hidden]{display:none!important}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--raise);border:1px solid var(--line);padding:9px 16px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:1} #toast.bad{border-color:var(--bad);color:#ffd2d2}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:1180px){body{grid-template-columns:220px minmax(0,1fr) 280px}.frame{width:330px}.frame img{width:300px}}
+</style></head>
+<body>
+<aside id="library">
+  <header><h1>Art Studio<small>Drafts stay on your machine. Only published arts reach your profile.</small></h1></header>
+  <div id="drop" tabindex="0" role="button" aria-label="Import images"><strong>Drop images here</strong><br>or click to browse, or paste</div>
+  <input id="file" type="file" accept="image/*" multiple hidden>
+  <form id="urlform"><input id="url" type="url" placeholder="Image URL"><button class="btn" type="submit">Add</button></form>
+  <div id="rotation">
+    <div class="ctl"><label for="share">Colour arts in rotation</label><output id="share-v"></output><input id="share" type="range" min="0" max="100" step="5"></div>
+    <p class="hint" id="share-hint"></p>
+  </div>
+  <div id="cards" class="scroll" role="listbox" aria-label="Drafts"></div>
+</aside>
+
+<main id="stage">
+  <div id="bar" hidden>
+    <input id="title" spellcheck="false" aria-label="Art name" title="Click to rename. Enter saves, Esc cancels"><span id="status"></span>
+    <span class="spacer"></span>
+    <div class="seg seg2" id="viewmode" role="group" aria-label="View"><button data-v="art" aria-pressed="true">Art</button><button data-v="card" aria-pressed="false">Full profile</button></div>
+    <label class="inline" id="nativewrap"><input id="native" type="checkbox"> 1:1</label>
+    <button class="btn quiet" id="dup">Duplicate</button>
+    <button class="btn quiet danger" id="del">Delete</button>
+    <button class="btn quiet" id="unpub" hidden>Unpublish</button>
+    <label class="inline" title="Takes part in the random rotation on your profile"><input id="enabled" type="checkbox" checked> In rotation</label>
+    <button class="btn primary" id="pub">Publish</button>
+  </div>
+  <div id="cards-view" hidden>
+    <figure><img id="card-dark" alt="Profile card, dark theme"><figcaption>Dark theme, mock data</figcaption></figure>
+    <figure><img id="card-light" alt="Profile card, light theme"><figcaption>Light theme, mock data</figcaption></figure>
+  </div>
+  <div id="views">
+    <div class="welcome" id="welcome"><h2>Start with an image</h2><p>Drop one or a whole batch here, paste from the clipboard or add a URL. Each one becomes a draft in the Neon ASCII style.</p></div>
+    <div class="view" hidden><div class="frame dark"><img id="pv-dark" alt="Preview, dark theme"></div><div class="meta" id="m-dark"></div></div>
+    <div class="view" hidden><div class="frame light"><img id="pv-light" alt="Preview, light theme"></div><div class="meta" id="m-light"></div></div>
+  </div>
+  <div id="source" hidden>
+    <div id="cropbox"><img id="srcimg" alt="Source image" draggable="false"><div id="croprect" hidden></div></div>
+    <p>Drag on the source image to crop. <button class="btn quiet" id="cropreset">Reset crop</button></p>
+  </div>
+</main>
+
+<aside id="controls" class="scroll" hidden>
+  <h3>Style</h3>
+  <div class="chips" id="presets"></div>
+  <h3>Mode</h3>
+  <div class="seg" id="modes"></div>
+
+  <h3>Detail</h3>
+  <div class="ctl" data-k="cols" data-min="16" data-max="160" data-step="1"><label>Columns</label></div>
+  <div class="ctl" data-k="scale" data-min="0.4" data-max="1.5" data-step="0.05" data-draft><label>Size in block</label></div>
+
+  <h3>Colour</h3>
+  <div class="ctl" data-k="saturation" data-min="0" data-max="2.5" data-step="0.05"><label>Saturation</label></div>
+  <div class="ctl" data-k="contrast" data-min="0.5" data-max="2.5" data-step="0.05"><label>Contrast</label></div>
+  <div class="ctl" data-k="brightness" data-min="-0.5" data-max="0.5" data-step="0.02"><label>Brightness</label></div>
+  <div class="ctl" data-k="gamma" data-min="0.4" data-max="2.5" data-step="0.05"><label>Gamma</label></div>
+  <div class="toggle"><span>Auto levels</span><input type="checkbox" data-k="levels"></div>
+  <div class="toggle"><span>Invert</span><input type="checkbox" data-k="invert"></div>
+
+  <h3>Effects</h3>
+  <div class="ctl" data-k="glow" data-min="0" data-max="1.5" data-step="0.05"><label>Glow</label></div>
+  <div class="ctl" data-k="underlay" data-min="0" data-max="1" data-step="0.05" data-mode="ascii"><label>Colour under glyphs</label></div>
+  <div class="ctl" data-k="edges" data-min="0" data-max="0.9" data-step="0.05" data-mode="ascii"><label>Contour glyphs</label></div>
+  <div class="ctl" data-k="gap" data-min="0" data-max="0.6" data-step="0.02" data-mode="mosaic"><label>Tile gap</label></div>
+  <div class="ctl" data-k="ink_floor" data-min="0" data-max="0.5" data-step="0.01"><label>Noise floor</label></div>
+  <div class="ctl" data-k="vignette" data-min="0" data-max="0.9" data-step="0.05"><label>Fade edges</label></div>
+
+  <h3>Background</h3>
+  <div class="ctl" data-k="bg_remove" data-min="0" data-max="0.6" data-step="0.02"><label>Remove flat background</label></div>
+  <h3>Light theme</h3>
+  <div class="seg" id="lightstyle" role="group" aria-label="How the art looks on the light theme"><button data-l="print" title="Dark areas become dense, like print. Reads best on white">Print</button><button data-l="match" title="Same silhouette as the dark theme, colours deepened">Match dark</button><button data-l="card" title="The dark-theme render on a dark panel">Card</button></div>
+  <div class="toggle"><span>Halftone instead of glyphs</span><input type="checkbox" id="lighthalftone"></div>
+  <p class="hint">Glyphs carry almost no tone on white, so the light theme is drawn as a halftone by default.</p>
+  <h3>Framing</h3>
+  <div class="seg seg2" id="fit" role="group" aria-label="Framing"><button data-f="cover" title="Fill the whole 370×500 block, cropping from the centre">Fill block</button><button data-f="contain" title="Show the whole image">Fit whole</button></div>
+
+  <div data-mode="ascii">
+    <h3>Characters</h3>
+    <div class="chips" id="ramps"></div>
+    <input id="chars" spellcheck="false" aria-label="Characters from sparse to dense">
+    <p class="hint">From sparse to dense. The first one is usually a space.</p>
+    <div class="toggle"><span>Bold font</span><input type="checkbox" data-k="bold"></div>
+  </div>
+</aside>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+let META = null, drafts = [], cur = null, params = {}, scale = 1, saveT = null, renderT = null, seq = 0;
+const MODE_NAMES = {ascii: 'ASCII', halftone: 'Halftone', mosaic: 'Mosaic'};
+const PRESET_NAMES = {'neon-ascii': 'Neon ASCII', 'dense-ascii': 'Dense ASCII', 'halftone': 'Halftone', 'led-wall': 'LED wall', 'ink-print': 'Ink print'};
+
+function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = 'show' + (bad ? ' bad' : ''); clearTimeout(t._h); t._h = setTimeout(() => t.className = '', bad ? 4200 : 1800); }
+async function api(method, url, body, raw) {
+  const opt = {method, headers: {}};
+  if (body instanceof FormData) opt.body = body;
+  else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers['Content-Type'] = 'application/json'; }
+  const r = await fetch(url, opt);
+  if (!r.ok) throw new Error(await r.text() || r.statusText);
+  return raw ? r : r.json();
+}
+
+/* ---------- rotation share ---------- */
+let rotT = null;
+function paintRotation(r) {
+  const s = $('#share'), equal = r.colour + r.other ? Math.round(100 * r.colour / (r.colour + r.other)) : 0;
+  const pct = r.render_share === null ? equal : Math.round(r.render_share * 100);
+  s.value = pct; $('#share-v').value = r.render_share === null ? `${pct}% (equal odds)` : `${pct}%`;
+  $('#share-hint').textContent = !r.colour ? 'No published colour arts yet.'
+    : `In rotation: ${r.colour} colour, ${r.other} text. With a 30-minute schedule a colour art shows ${pct ? 'about every ' + fmtEvery(30 / (pct / 100)) : 'never'}.`;
+}
+const fmtEvery = m => m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(m < 600 ? 1 : 0)} h`;
+async function loadRotation() { try { paintRotation(await api('GET', '/api/rotation')); } catch (e) { toast(e.message, true); } }
+$('#share').oninput = e => {
+  $('#share-v').value = `${e.target.value}%`;
+  clearTimeout(rotT);
+  rotT = setTimeout(async () => { try { paintRotation(await api('PUT', '/api/rotation', {render_share: +e.target.value / 100})); } catch (err) { toast(err.message, true); } }, 300);
+};
+
+/* ---------- library ---------- */
+async function loadDrafts(selectId) {
+  drafts = await api('GET', '/api/drafts');
+  const box = $('#cards'); box.innerHTML = '';
+  if (!drafts.length) box.innerHTML = '<p class="empty-lib">Nothing here yet. Import images above.</p>';
+  for (const d of drafts) {
+    const b = document.createElement('button');
+    b.className = 'card' + (cur && d.id === cur.id ? ' active' : ''); b.role = 'option'; b.dataset.id = d.id;
+    const state = d.published ? (d.dirty ? 'dirty' : 'pub') : '';
+    b.innerHTML = `<img loading="lazy" alt="" src="/api/drafts/${d.id}/thumb?theme=dark&v=${Math.round(d.updated)}"><span></span><i class="${state}" title="${d.published ? (d.dirty ? 'Published, has unpublished edits' : 'Published') : 'Draft'}"></i>`;
+    b.querySelector('span').textContent = d.id;
+    b.onclick = () => select(d.id);
+    box.append(b);
+  }
+  if (selectId) select(selectId);
+  else if (cur) { const d = drafts.find(x => x.id === cur.id); if (d) { cur = d; paintStatus(); } }
+}
+
+async function importFiles(files) {
+  const imgs = [...files].filter(f => f.type.startsWith('image/'));
+  if (!imgs.length) return;
+  const fd = new FormData(); imgs.forEach(f => fd.append('file', f, f.name));
+  try { const made = await api('POST', '/api/drafts', fd); toast(`Imported ${made.length}`); await loadDrafts(made[0].id); }
+  catch (e) { toast(e.message, true); }
+}
+
+/* ---------- editor ---------- */
+function select(id) {
+  const d = drafts.find(x => x.id === id); if (!d) return;
+  cur = d; params = {...META.defaults, ...d.params}; scale = d.scale ?? 1;
+  $$('.card').forEach(c => c.classList.toggle('active', c.dataset.id === id));
+  $('#welcome').hidden = true; $$('.view').forEach(v => v.hidden = false);
+  $('#bar').hidden = false; $('#controls').hidden = false; $('#source').hidden = false;
+  $('#title').value = d.id; $('#enabled').checked = d.published ? d.enabled : true;
+  $('#srcimg').src = `/api/drafts/${d.id}/source`;
+  syncControls(); paintStatus(); paintCrop(); render();
+}
+
+function paintStatus() {
+  const s = $('#status'), pub = $('#pub');
+  s.className = cur.published ? (cur.dirty ? 'dirty' : 'pub') : '';
+  s.textContent = cur.published ? (cur.dirty ? 'Published, edited' : 'Published') : 'Draft';
+  pub.textContent = cur.published ? 'Update profile' : 'Publish';
+  pub.disabled = cur.published && !cur.dirty && $('#enabled').checked === cur.enabled;
+  $('#unpub').hidden = !cur.published; $('#del').hidden = cur.published;
+}
+
+function syncControls() {
+  $$('#presets .chip').forEach(c => c.setAttribute('aria-pressed', matchesPreset(c.dataset.p)));
+  $$('#modes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === params.mode));
+  $$('.ctl').forEach(c => { const k = c.dataset.k, v = c.dataset.draft !== undefined ? scale : params[k]; c.querySelector('input').value = v; c.querySelector('output').value = fmt(v); });
+  $$('.toggle input[data-k]').forEach(i => i.checked = !!params[i.dataset.k]);
+  $$('#lightstyle button').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === params.light_style));
+  $$('#fit button').forEach(b => b.setAttribute('aria-pressed', b.dataset.f === params.fit));
+  $('#lighthalftone').checked = params.light_mode === 'halftone';
+  $('#chars').value = params.chars;
+  $$('#ramps .chip').forEach(c => c.setAttribute('aria-pressed', META.ramps[c.dataset.r] === params.chars));
+  $$('[data-mode]').forEach(el => el.hidden = el.dataset.mode !== params.mode);
+}
+const fmt = v => typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v;
+function matchesPreset(name) { const p = META.presets[name]; return Object.entries(p).every(([k, v]) => params[k] === v); }
+
+function changed() { syncControls(); scheduleRender(); scheduleSave(); }
+function scheduleRender() { clearTimeout(renderT); renderT = setTimeout(render, 110); }
+function scheduleSave() {
+  clearTimeout(saveT);
+  saveT = setTimeout(async () => {
+    try { const d = await api('PUT', `/api/drafts/${cur.id}`, {params: diffDefaults(params), scale});
+      Object.assign(cur, d); await loadDrafts(); }
+    catch (e) { toast(e.message, true); }
+  }, 600);
+}
+function diffDefaults(p) { const o = {}; for (const [k, v] of Object.entries(p)) if (JSON.stringify(v) !== JSON.stringify(META.defaults[k])) o[k] = v; return o; }
+
+let view = 'art';
+function setView(v) {
+  view = v; $$('#viewmode button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+  $('#cards-view').hidden = v !== 'card'; $('#views').hidden = v === 'card'; $('#nativewrap').hidden = v === 'card';
+  render();
+}
+async function renderCards(my) {
+  await Promise.all(['dark', 'light'].map(async theme => {
+    const img = $(`#card-${theme}`); img.classList.add('busy');
+    try {
+      const r = await api('POST', '/api/card', {id: cur.id, theme, params, scale}, true);
+      if (my !== seq) return;
+      const url = URL.createObjectURL(await r.blob()); const old = img.src; img.src = url;
+      if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+    } catch (e) { if (my === seq) toast(e.message, true); }
+    finally { img.classList.remove('busy'); }
+  }));
+}
+async function render() {
+  if (!cur) return; const my = ++seq;
+  if (view === 'card') return renderCards(my);
+  await Promise.all(['dark', 'light'].map(async theme => {
+    const frame = $(`.frame.${theme}`); frame.classList.add('busy');
+    try {
+      const r = await api('POST', '/api/preview', {id: cur.id, theme, params}, true);
+      if (my !== seq) return;
+      const url = URL.createObjectURL(await r.blob()); const img = $(`#pv-${theme}`);
+      const old = img.src; img.src = url; if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+      const kb = Math.round(+r.headers.get('X-Bytes') / 1024), m = $(`#m-${theme}`);
+      m.textContent = `${theme === 'dark' ? 'Dark' : 'Light'} theme · ${kb} KB · ${r.headers.get('X-Size')} px · ${r.headers.get('X-Ms')} ms`;
+      m.classList.toggle('over', +r.headers.get('X-Bytes') * 1.34 > META.cap_bytes);
+      m.title = m.classList.contains('over') ? 'Heavier than recommended: lower the columns or effects' : '';
+    } catch (e) { if (my === seq) toast(e.message, true); }
+    finally { frame.classList.remove('busy'); }
+  }));
+  paintScale();
+}
+// "Size in block": the art box is the 370px zone times scale, centred (as in art_engine.build_fragment)
+function paintScale() { $$('.frame img').forEach(i => i.style.width = $('#native').checked ? '' : `${Math.round(370 * Math.min(1, scale))}px`); }
+
+/* ---------- crop ---------- */
+function paintCrop() {
+  const r = $('#croprect'), c = params.crop;
+  if (!c) { r.hidden = true; return; }
+  const img = $('#srcimg'); r.hidden = false;
+  Object.assign(r.style, {left: c[0] * img.width + 'px', top: c[1] * img.height + 'px', width: c[2] * img.width + 'px', height: c[3] * img.height + 'px'});
+}
+(() => {
+  const box = $('#cropbox'); let start = null;
+  const pos = e => { const b = $('#srcimg').getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), Math.min(1, Math.max(0, (e.clientY - b.top) / b.height))]; };
+  box.addEventListener('pointerdown', e => { start = pos(e); box.setPointerCapture(e.pointerId); });
+  box.addEventListener('pointermove', e => { if (!start) return; const p = pos(e);
+    params.crop = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.abs(p[0] - start[0]), Math.abs(p[1] - start[1])]; paintCrop(); });
+  box.addEventListener('pointerup', () => { if (!start) return; start = null;
+    if (!params.crop || params.crop[2] < 0.03 || params.crop[3] < 0.03) params.crop = null;
+    else params.crop = params.crop.map(v => +v.toFixed(4));
+    paintCrop(); changed(); });
+  $('#srcimg').addEventListener('load', paintCrop);
+  $('#cropreset').onclick = () => { params.crop = null; paintCrop(); changed(); };
+})();
+
+/* ---------- actions ---------- */
+$('#pub').onclick = async () => {
+  clearTimeout(saveT);
+  try {
+    await api('PUT', `/api/drafts/${cur.id}`, {params: diffDefaults(params), scale});
+    await api('POST', `/api/drafts/${cur.id}/publish`, {enabled: $('#enabled').checked});
+    toast(cur.published ? 'Profile updated' : 'Published'); await loadDrafts(); loadRotation();
+  } catch (e) { toast(e.message, true); }
+};
+$('#unpub').onclick = async () => { try { await api('POST', `/api/drafts/${cur.id}/unpublish`); toast('Unpublished'); await loadDrafts(); loadRotation(); } catch (e) { toast(e.message, true); } };
+$('#dup').onclick = async () => { try { const d = await api('POST', `/api/drafts/${cur.id}/duplicate`); toast('Duplicated'); await loadDrafts(d.id); } catch (e) { toast(e.message, true); } };
+$('#del').onclick = async () => {
+  const b = $('#del');
+  if (!b.dataset.armed) { b.dataset.armed = 1; b.textContent = 'Delete for good?'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Delete'; }, 3000); return; }
+  try { await api('DELETE', `/api/drafts/${cur.id}`); toast('Deleted'); cur = null; location.hash = '';
+    $$('.view').forEach(v => v.hidden = true); $('#welcome').hidden = false; $('#bar').hidden = true; $('#controls').hidden = true; $('#source').hidden = true;
+    delete b.dataset.armed; b.textContent = 'Delete'; await loadDrafts(); } catch (e) { toast(e.message, true); }
+};
+$('#enabled').onchange = () => paintStatus();
+async function renameCurrent() {
+  const input = $('#title'), name = input.value.trim();
+  if (!cur || !name || name === cur.id) { input.value = cur ? cur.id : ''; return; }
+  clearTimeout(saveT);
+  try {
+    await api('PUT', `/api/drafts/${cur.id}`, {params: diffDefaults(params), scale});
+    const d = await api('POST', `/api/drafts/${cur.id}/rename`, {name});
+    cur = null; location.hash = d.id; toast(`Renamed to ${d.id}`); await loadDrafts(d.id);
+  } catch (e) { toast(e.message, true); input.value = cur.id; }
+}
+$('#title').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+  if (e.key === 'Escape') { e.target.value = cur.id; e.target.blur(); }
+});
+$('#title').addEventListener('change', renameCurrent);
+$('#native').onchange = e => { $$('.frame').forEach(f => f.classList.toggle('native', e.target.checked)); paintScale(); };
+
+/* ---------- import ---------- */
+const drop = $('#drop');
+drop.onclick = () => $('#file').click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); } };
+$('#file').onchange = e => { importFiles(e.target.files); e.target.value = ''; };
+['dragenter', 'dragover'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); if (t === 'drop' || !e.relatedTarget) drop.classList.remove('over'); }));
+document.addEventListener('drop', e => importFiles(e.dataTransfer.files));
+document.addEventListener('paste', e => { if (e.target.matches('input')) return; importFiles([...e.clipboardData.files]); });
+$('#urlform').onsubmit = async e => { e.preventDefault(); const url = $('#url').value.trim(); if (!url) return;
+  try { const made = await api('POST', '/api/drafts', {url}); $('#url').value = ''; toast('Imported'); await loadDrafts(made[0].id); } catch (err) { toast(err.message, true); } };
+
+/* ---------- boot ---------- */
+(async () => {
+  META = await api('GET', '/api/meta');
+  for (const name of Object.keys(META.presets)) { const c = document.createElement('button'); c.className = 'chip'; c.dataset.p = name; c.textContent = PRESET_NAMES[name] || name;
+    c.onclick = () => { params = {...META.defaults, crop: params.crop, chars: params.chars, fit: params.fit, light_style: params.light_style, light_mode: params.light_mode, ...META.presets[name]}; changed(); }; $('#presets').append(c); }
+  for (const m of META.modes) { const b = document.createElement('button'); b.dataset.m = m; b.textContent = MODE_NAMES[m] || m; b.onclick = () => { params.mode = m; changed(); }; $('#modes').append(b); }
+  for (const [name, chars] of Object.entries(META.ramps)) { const c = document.createElement('button'); c.className = 'chip'; c.dataset.r = name; c.textContent = name; c.title = chars;
+    c.onclick = () => { params.chars = chars; changed(); }; $('#ramps').append(c); }
+  $$('.ctl').forEach(c => {
+    const i = Object.assign(document.createElement('input'), {type: 'range', min: c.dataset.min, max: c.dataset.max, step: c.dataset.step});
+    i.id = 'k-' + c.dataset.k; c.querySelector('label').htmlFor = i.id;
+    const o = document.createElement('output'); c.append(o, i);
+    i.oninput = () => { const v = parseFloat(i.value); o.value = fmt(v);
+      if (c.dataset.draft !== undefined) { scale = v; paintScale(); if (view === 'card') scheduleRender(); } else { params[c.dataset.k] = v; scheduleRender(); }
+      scheduleSave(); };
+  });
+  $$('.toggle input[data-k]').forEach(i => i.onchange = () => { params[i.dataset.k] = i.checked; changed(); });
+  $$('#lightstyle button').forEach(b => b.onclick = () => { params.light_style = b.dataset.l; changed(); });
+  $$('#fit button').forEach(b => b.onclick = () => { params.fit = b.dataset.f; changed(); });
+  $('#lighthalftone').onchange = e => { params.light_mode = e.target.checked ? 'halftone' : 'same'; changed(); };
+  $('#chars').oninput = e => { if (e.target.value.length >= 2) { params.chars = e.target.value; scheduleRender(); scheduleSave(); } };
+  $$('#viewmode button').forEach(b => b.onclick = () => setView(b.dataset.v));
+  await loadDrafts(); loadRotation();
+  const want = decodeURIComponent(location.hash.slice(1));
+  if (want && drafts.some(d => d.id === want)) select(want); else if (drafts.length) select(drafts[0].id);
+})();
+</script>
+</body></html>
