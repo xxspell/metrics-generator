@@ -97,6 +97,8 @@ class StudioTest(AioHTTPTestCase):
         self.assertEqual(art["render"], {"mode": "halftone", "cols": 24})  # defaults stripped
         self.assertTrue(Path(art["source"]).is_file())
         self.assertTrue(art_engine.asset_fresh(manifest, art))
+        self.assertEqual(art["key"], art_engine.asset_key(art, Path(art["source"]).read_bytes()),
+                         "publish records the asset key so profiles can ship without sources")
 
         listing = await (await self.client.get("/api/drafts")).json()
         self.assertTrue(listing[0]["published"])

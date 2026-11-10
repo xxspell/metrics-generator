@@ -105,6 +105,34 @@ class TestBuildAndGc(TempGenDirMixin):
         self.assertEqual(list((self.tmp / "gen").iterdir()), [],
                          "a plain (publishing) build must not leave assets of disabled arts")
 
+    def test_build_records_key_and_assets_work_without_source(self):
+        """Profiles may ship only manifest + assets; originals stay private."""
+        changed = art_engine.ensure_assets(self.manifest)
+        self.assertTrue(changed, "first build records the key")
+        key = self.art["key"]
+        self.assertEqual(key, art_engine.asset_key(self.art, self.src.read_bytes()))
+        self.assertFalse(art_engine.ensure_assets(self.manifest), "nothing new to record")
+
+        self.src.unlink()
+        art_engine.validate_manifest(self.manifest, base_dir=self.tmp)
+        self.assertTrue(art_engine.asset_fresh(self.manifest, self.art))
+        self.assertIsNotNone(art_engine.build_fragment(self.manifest, self.art, "dark"))
+        art_engine.ensure_assets(self.manifest)  # must not try to render or crash
+        self.assertEqual(len(list((self.tmp / "gen").iterdir())), 2, "gc keeps assets of the recorded key")
+
+    def test_missing_source_without_key_is_invalid(self):
+        self.src.unlink()
+        with self.assertRaises(art_engine.ManifestError):
+            art_engine.validate_manifest(self.manifest, base_dir=self.tmp)
+
+    def test_missing_source_and_missing_assets_reported_not_fresh(self):
+        art_engine.ensure_assets(self.manifest)
+        self.src.unlink()
+        for p in (self.tmp / "gen").iterdir():
+            p.unlink()
+        art_engine.ensure_assets(self.manifest)  # warns, does not crash
+        self.assertFalse(art_engine.asset_fresh(self.manifest, self.art))
+
     def test_gc_preserves_unmatched_and_removes_orphans(self):
         gen = self.tmp / "gen"
         gen.mkdir(parents=True)

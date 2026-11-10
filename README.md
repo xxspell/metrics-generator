@@ -158,9 +158,11 @@ Art Studio is a small local web app:
 1. Drop images (several at once), paste them or add a URL. Each one becomes a draft.
 2. Pick a style and tune it. You see the dark and light versions side by side, or the whole profile card with mock data (*Full profile*). Drag on the source image to crop. Click the name to rename.
 3. Press *Publish*. The image goes to `arts/src/`, the entry to `arts/manifest.json`, the rendered assets to `arts/gen/`.
-4. Copy `arts/` into your profile repository and commit it (a local `./run.sh` does this for you).
+4. Copy `arts/manifest.json` and `arts/gen/` into your profile repository and commit them (a local `./run.sh` does this for you).
 
-Drafts stay in `.studio/` and never leave your machine. Published images do end up in a public repository, so only publish images you are allowed to share.
+Original images are not needed in the profile repository. The manifest stores each art's asset key, so the assets are used as they are and only rebuilt where the original is available. `run.sh` never copies `arts/src/` to the profile. Keep your originals somewhere safe (a private repository works well): you need them to change an art later.
+
+Drafts stay in `.studio/` and never leave your machine. The rendered arts do end up in a public repository, so only publish images you are allowed to share.
 
 Some notes on how it renders:
 
@@ -183,7 +185,7 @@ Some notes on how it renders:
 }
 ```
 
-Common fields: `enabled` (in rotation or not), `weight` (relative chance inside its group, default 1), `scale` (size inside the block, 0.2-1.5).
+Common fields: `enabled` (in rotation or not), `weight` (relative chance inside its group, default 1), `scale` (size inside the block, 0.2-1.5), `key` (asset hash written by `build`; lets the art work without its source file).
 
 `render` options (only non-defaults are stored): `mode` (`ascii`, `halftone`, `mosaic`), `cols`, `chars`, `edges`, `bold`, `saturation`, `contrast`, `brightness`, `gamma`, `levels`, `invert`, `glow`, `underlay`, `gap`, `ink_floor`, `vignette`, `bg_remove`, `crop` (`[x, y, w, h]` in 0-1), `fit` (`cover`, `contain`), `light_style` (`print`, `match`, `card`), `light_mode` (`halftone`, `same`).
 

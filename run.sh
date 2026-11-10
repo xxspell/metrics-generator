@@ -57,7 +57,13 @@ if [ -d "arts" ]; then
   if [ -d "arts/gen" ]; then
     rm -rf "$TARGET_DIR/arts/gen"
   fi
-  cp -r arts/. "$TARGET_DIR/arts/" || echo "No arts directory to copy back"
+  # Everything except arts/src: original images stay local. The manifest records
+  # each asset's key, so the profile needs only arts/gen to show colour arts.
+  for item in arts/*; do  # hidden files (.DS_Store) are not copied either
+    [ -e "$item" ] || continue
+    [ "$(basename "$item")" = "src" ] && continue
+    cp -r "$item" "$TARGET_DIR/arts/" || echo "Could not copy $item back"
+  done
 fi
 if [ -f "dark_mode.svg" ]; then
   cp dark_mode.svg "$TARGET_DIR" || echo "No dark_mode.svg to copy back"

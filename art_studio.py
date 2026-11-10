@@ -166,8 +166,8 @@ class Store:
             old_src.rename(new_src)
             art["id"], art["source"] = new_id, str(new_src)
             art_engine.validate_manifest(manifest, base_dir=self.manifest_path.parent)
-            art_engine.save_manifest(manifest, self.manifest_path)
             art_engine.ensure_assets(manifest, ids=[new_id], gc=False)
+            art_engine.save_manifest(manifest, self.manifest_path)
             art_engine.gc_assets(manifest)
         return renamed
 
@@ -203,8 +203,8 @@ class Store:
         arts = [a for a in manifest.get("arts", []) if a.get("id") != art_id]
         manifest["arts"] = arts + [art]
         art_engine.validate_manifest(manifest, base_dir=self.manifest_path.parent)
+        art_engine.ensure_assets(manifest, ids=[art_id], gc=False)  # also records art["key"]
         art_engine.save_manifest(manifest, self.manifest_path)
-        art_engine.ensure_assets(manifest, ids=[art_id], gc=False)
         art_engine.gc_assets(manifest)
         return art
 

@@ -117,7 +117,11 @@ def validate_manifest(manifest: dict, base_dir: Path = Path(".")) -> None:
         if art.get("type") not in ART_TYPES:
             raise ManifestError(f"manifest: art '{art_id}' has unknown type {art.get('type')!r}")
         source = art.get("source")
-        if not source or not (base_dir / source).is_file() and not Path(source).is_file():
+        source_missing = not source or not (base_dir / source).is_file() and not Path(source).is_file()
+        key = art.get("key")
+        if key is not None and not re.fullmatch(rf"[0-9a-f]{{{ASSET_KEY_HEX}}}", str(key)):
+            raise ManifestError(f"manifest: art '{art_id}' key must be {ASSET_KEY_HEX} hex chars")
+        if source_missing and not (art.get("type") in RASTER_TYPES and key):
             raise ManifestError(f"manifest: art '{art_id}' source not found: {source}")
         if art["type"] == "render":
             _validate_render_params(art_id, art.get("render"))
@@ -430,13 +434,27 @@ def source_bytes(art: dict) -> bytes:
     return Path(art["source"]).read_bytes()
 
 
+def has_source(art: dict) -> bool:
+    return bool(art.get("source")) and Path(art["source"]).is_file()
+
+
+def art_key(art: dict) -> str | None:
+    """Asset key from the source when it is here, else the key recorded in the
+    manifest at build time (profiles can ship assets without the originals)."""
+    if has_source(art):
+        return asset_key(art, source_bytes(art))
+    return art.get("key")
+
+
 def asset_path(art_id: str, theme: str, key: str) -> Path:
     return GEN_DIR / f"{art_id}.{theme}.{key}.svg"
 
 
 def current_asset(manifest: dict, art: dict, theme: str) -> Path | None:
     """Path of the up-to-date asset file for (art, theme), or None if not built."""
-    key = asset_key(art, source_bytes(art))
+    key = art_key(art)
+    if key is None:
+        return None
     path = asset_path(art["id"], theme, key)
     return path if path.is_file() else None
 
@@ -524,11 +542,9 @@ def gc_assets(manifest: dict, report_only: bool = False, keep_disabled: bool = T
     current = {}
     for art in manifest.get("arts") or []:
         if art["type"] in RASTER_TYPES and (keep_disabled or art.get("enabled", True)):
-            try:
-                key = asset_key(art, source_bytes(art))
-            except FileNotFoundError:
-                continue
-            current[art["id"]] = key
+            key = art_key(art)
+            if key is not None:
+                current[art["id"]] = key
 
     stale: list[Path] = []
     if GEN_DIR.is_dir():
@@ -545,30 +561,45 @@ def gc_assets(manifest: dict, report_only: bool = False, keep_disabled: bool = T
 
 
 def ensure_assets(manifest: dict, ids: list[str] | None = None, gc: bool = True,
-                  include_disabled: bool = False) -> None:
-    """Build any missing/stale assets for engine/image arts (both themes).
+                  include_disabled: bool = False) -> bool:
+    """Build any missing/stale assets for raster arts (both themes).
 
     Disabled arts are skipped unless named in `ids` or `include_disabled` is
     set, and a plain build also garbage-collects their assets, so a production
     build never publishes assets for arts under review.
+
+    Records each art's asset key in the manifest entry (`key`), so the assets
+    stay usable where the source image is not shipped. Returns True when a key
+    changed and the manifest should be saved.
     """
     if not manifest:
-        return
+        return False
+    changed = False
     for art in manifest.get("arts") or []:
         if art["type"] not in RASTER_TYPES or ids and art["id"] not in ids:
             continue
         if not art.get("enabled", True) and not ids and not include_disabled:
             continue
+        if not has_source(art):
+            if not asset_fresh(manifest, art):
+                logger.warning("Art {id}: no source image and no built assets; it will not be shown", id=art["id"])
+            continue
         key = asset_key(art, source_bytes(art))
         for theme in THEMES:
             if not asset_path(art["id"], theme, key).is_file():
                 build_asset(manifest, art, theme)
+        if art.get("key") != key:
+            art["key"] = key
+            changed = True
     if gc:
         gc_assets(manifest, keep_disabled=include_disabled or bool(ids))
+    return changed
 
 
 def asset_fresh(manifest: dict, art: dict) -> bool:
-    key = asset_key(art, source_bytes(art))
+    key = art_key(art)
+    if key is None:
+        return False
     return all(asset_path(art["id"], theme, key).is_file() for theme in THEMES)
 
 
@@ -746,15 +777,17 @@ def main(argv=None) -> int:
 
     if args.cmd == "build":
         if args.rebuild:
+            # only arts whose source is here can be rendered again
             targets = [a for a in manifest.get("arts") or []
-                       if a["type"] in RASTER_TYPES and (not args.ids or a["id"] in args.ids)]
+                       if a["type"] in RASTER_TYPES and has_source(a) and (not args.ids or a["id"] in args.ids)]
             for art in targets:
                 key = asset_key(art, source_bytes(art))
                 for theme in THEMES:
                     path = asset_path(art["id"], theme, key)
                     if path.is_file():
                         path.unlink()
-        ensure_assets(manifest, ids=args.ids or None, gc=not args.no_gc, include_disabled=args.all)
+        if ensure_assets(manifest, ids=args.ids or None, gc=not args.no_gc, include_disabled=args.all):
+            save_manifest(manifest, manifest_path)
         return 0
 
     if args.cmd == "check":
