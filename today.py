@@ -222,12 +222,12 @@ async def recursive_loc(session, owner, repo_name, data, cache_comment, addition
     """
     query_count('recursive_loc')
     query = '''
-    query ($repo_name: String!, $owner: String!, $cursor: String) {
+    query ($repo_name: String!, $owner: String!, $cursor: String, $first: Int!) {
         repository(name: $repo_name, owner: $owner) {
             defaultBranchRef {
                 target {
                     ... on Commit {
-                        history(first: 100, after: $cursor) {
+                        history(first: $first, after: $cursor) {
                             totalCount
                             edges {
                                 node {
@@ -253,11 +253,19 @@ async def recursive_loc(session, owner, repo_name, data, cache_comment, addition
             }
         }
     }'''
-    variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor}
-    for attempt in range(3):
+    # GitHub answers a heavy history page (big commits, additions/deletions) with
+    # a 502/504 timeout. Retry those with a smaller page; pagination continues
+    # from the same cursor, so the totals do not change.
+    page_sizes = [100, 50, 25, 10]
+    for attempt in range(len(page_sizes)):
+        variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor, 'first': page_sizes[attempt]}
         try:
             async with session.post('https://api.github.com/graphql', json={'query': query, 'variables':variables}, headers=HEADERS) as response:
-                # print(response.status)
+                if response.status in (500, 502, 503, 504) and attempt < len(page_sizes) - 1:
+                    logger.warning("recursive_loc {owner}/{repo}: HTTP {status}, retrying with {size} commits per page",
+                                   owner=owner, repo=repo_name, status=response.status, size=page_sizes[attempt + 1])
+                    await asyncio.sleep(2 ** attempt)
+                    continue
                 if response.status == 200:
                     json_data = await response.json()
                     if json_data['data']['repository']['defaultBranchRef'] != None:
@@ -268,7 +276,7 @@ async def recursive_loc(session, owner, repo_name, data, cache_comment, addition
                     raise Exception('Too many requests in a short amount of time!\nYou\'ve hit the non-documented anti-abuse limit!')
                 raise Exception('recursive_loc() has failed with a', response.status, await response.text(), QUERY_COUNT)
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
-            if attempt == 2:
+            if attempt == len(page_sizes) - 1:
                 raise e
             logger.warning("Retry {attempt} failed in recursive_loc: {error}", attempt=attempt + 1, error=e)
             await asyncio.sleep(2 ** attempt)
