@@ -4,9 +4,18 @@ set -euo pipefail
 LOCK_DIR="/tmp/metrics-generator.lock"
 TARGET_DIR="target-repo-temp"
 
+LOCK_MAX_AGE_MIN="${LOCK_MAX_AGE_MIN:-180}"  # a normal run takes well under 30 minutes
+
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  echo "Another metrics run is already in progress, skipping."
-  exit 0
+  # A run killed without reaching its EXIT trap leaves the lock behind for good.
+  if [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin +"$LOCK_MAX_AGE_MIN" 2>/dev/null)" ]; then
+    echo "Removing stale lock older than ${LOCK_MAX_AGE_MIN} minutes."
+    rm -rf "$LOCK_DIR"
+    mkdir "$LOCK_DIR" 2>/dev/null || { echo "Another metrics run is already in progress, skipping."; exit 0; }
+  else
+    echo "Another metrics run is already in progress, skipping."
+    exit 0
+  fi
 fi
 
 cleanup() {

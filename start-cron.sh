@@ -37,6 +37,10 @@ esac
 
 chmod 0644 "$CRON_FILE"
 
+# No run can be in progress before cron starts. A lock left by a run that was
+# killed with the container (restart, host reboot) would block every run.
+rm -rf /tmp/metrics-generator.lock
+
 echo "[metrics-generator] cron schedule: ${CRON_SCHEDULE}"
 echo "[metrics-generator] log mode: ${CRON_LOG_MODE}"
 if [ "$CRON_LOG_MODE" = "file" ]; then
