@@ -36,14 +36,19 @@ git clone --depth 1 "https://x-access-token:${ACCESS_TOKEN}@github.com/${TARGET_
 
 # Copy required files from target repository
 mkdir -p cache arts
+SYNC_STAMP="arts/.last-sync"  # checksum of the manifest as last pushed (hidden: never copied to the profile)
+manifest_sum() { cksum < arts/manifest.json | awk '{print $1 "-" $2}'; }
 if [ -d "$TARGET_DIR/cache" ]; then
   cp -r "$TARGET_DIR/cache/." cache/ || echo "No cache directory found"
 fi
 if [ -d "$TARGET_DIR/arts" ]; then
-  # A local manifest (edited in Art Studio) is newer than the profile's copy:
-  # overwriting it would drop freshly published arts and gc their assets.
+  # The profile's manifest is the source of truth, except when the local one was
+  # edited (Art Studio publish) since the last successful sync: overwriting that
+  # would drop freshly published arts and gc their assets. A local copy that was
+  # only ever synced (a server) never counts as edited.
   LOCAL_MANIFEST=""
-  if [ -f arts/manifest.json ]; then
+  if [ -f arts/manifest.json ] && [ -f "$SYNC_STAMP" ] && [ "$(manifest_sum)" != "$(cat "$SYNC_STAMP")" ]; then
+    echo "Local arts/manifest.json changed since the last sync: keeping it."
     LOCAL_MANIFEST="$(mktemp)"
     cp arts/manifest.json "$LOCAL_MANIFEST"
   fi
@@ -109,3 +114,7 @@ else
 fi
 
 cd ..
+# The profile now holds this manifest (set -e: a failed push never gets here)
+if [ -f arts/manifest.json ]; then
+  manifest_sum > "$SYNC_STAMP"
+fi
