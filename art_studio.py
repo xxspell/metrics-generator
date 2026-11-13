@@ -29,10 +29,12 @@ from urllib.parse import unquote
 
 import aiohttp
 from aiohttp import web
+import numpy as np
 from PIL import Image
 
 import art_engine
 import art_render
+import subject_mask
 
 MAX_UPLOAD = 25 * 1024 * 1024
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
@@ -79,6 +81,7 @@ class Store:
         for p in sorted(self.drafts_dir.glob("*.json")):
             d = json.loads(p.read_text(encoding="utf-8"))
             d["published"] = d["id"] in published
+            d["has_mask"] = subject_mask.find_mask(self.root / d["source"]) is not None
             d["enabled"] = published.get(d["id"], {}).get("enabled", False)
             d["dirty"] = d["published"] and published[d["id"]].get("render", {}) != clean_params(d["params"])
             out.append(d)
@@ -127,9 +130,22 @@ class Store:
         art_id = self.unique_id(Path(name).stem)
         rel = Path("src") / f"{art_id}{ext}"
         (self.root / rel).write_bytes(data)
-        draft = {"id": art_id, "source": str(rel), "params": dict(PRESETS["neon-ascii"]),
+        draft = {"id": art_id, "source": str(rel), "params": {**PRESETS["neon-ascii"], "fit": "auto"},
                  "scale": 1.0, "origin": origin, "created": time.time()}
         return self.save(draft)
+
+    def auto_cutout(self, draft: dict) -> dict:
+        """On import: lift the subject (Apple Vision) and use it when it is a real
+        subject, not the whole frame or a speck. Blocking: run in an executor."""
+        mask, _ = subject_mask.generate(self.source_path(draft))
+        if mask is None:
+            return draft
+        with Image.open(mask) as m:
+            frac = float(np.asarray(m.convert("L").resize((128, 128)), dtype=np.float32).mean() / 255)
+        if 0.03 <= frac <= 0.9:
+            draft["params"] = {**draft["params"], "cutout": "subject"}
+            return self.save(draft)
+        return draft
 
     def duplicate(self, art_id: str) -> dict:
         draft = self.get(art_id)
@@ -137,6 +153,7 @@ class Store:
         src = self.source_path(draft)
         rel = Path("src") / f"{new_id}{src.suffix}"
         (self.root / rel).write_bytes(src.read_bytes())
+        _copy_mask(src, self.root / rel)
         copy = {**draft, "id": new_id, "source": str(rel), "created": time.time()}
         return self.save(copy)
 
@@ -153,6 +170,7 @@ class Store:
 
         src = self.source_path(draft)
         rel = Path("src") / f"{new_id}{src.suffix}"
+        _move_mask(src, self.root / rel)
         src.rename(self.root / rel)
         renamed = {**draft, "id": new_id, "source": str(rel)}
         self.save(renamed)
@@ -163,6 +181,7 @@ class Store:
         if art is not None:  # keep what is published as-is; only the name changes
             old_src = Path(art["source"])
             new_src = old_src.with_name(f"{new_id}{old_src.suffix}")
+            _move_mask(old_src, new_src)
             old_src.rename(new_src)
             art["id"], art["source"] = new_id, str(new_src)
             art_engine.validate_manifest(manifest, base_dir=self.manifest_path.parent)
@@ -175,6 +194,7 @@ class Store:
         draft = self.get(art_id)
         if art_id in self.published():
             raise web.HTTPConflict(text="unpublish it first")
+        subject_mask.mask_path(self.source_path(draft)).unlink(missing_ok=True)
         self.source_path(draft).unlink(missing_ok=True)
         self._meta_path(art_id).unlink()
 
@@ -196,6 +216,8 @@ class Store:
         self.arts_src.mkdir(parents=True, exist_ok=True)
         dest = self.arts_src / f"{art_id}{src.suffix}"
         dest.write_bytes(src.read_bytes())
+        subject_mask.mask_path(dest).unlink(missing_ok=True)
+        _copy_mask(src, dest)
         art = {"id": art_id, "type": "render", "source": str(dest), "enabled": bool(enabled),
                "render": clean_params(draft["params"])}
         if draft.get("scale", 1.0) != 1.0:
@@ -215,8 +237,21 @@ class Store:
             raise web.HTTPNotFound(text="not published")
         manifest["arts"] = [a for a in manifest["arts"] if a is not art]
         art_engine.save_manifest(manifest, self.manifest_path)
+        subject_mask.mask_path(art["source"]).unlink(missing_ok=True)
         Path(art["source"]).unlink(missing_ok=True)
         art_engine.gc_assets(manifest)
+
+
+def _copy_mask(src: Path, dest: Path) -> None:
+    mask = subject_mask.find_mask(src)
+    if mask:
+        subject_mask.mask_path(dest).write_bytes(mask.read_bytes())
+
+
+def _move_mask(src: Path, dest: Path) -> None:
+    mask = subject_mask.find_mask(src)
+    if mask:
+        mask.rename(subject_mask.mask_path(dest))
 
 
 def slugify(name: str) -> str:
@@ -237,6 +272,9 @@ def sanitize_params(raw) -> dict:
     params = {k: v for k, v in raw.items() if k in art_render.DEFAULTS}
     if params.get("mode", "ascii") not in art_render.MODES:
         raise web.HTTPBadRequest(text=f"mode must be one of {art_render.MODES}")
+    for key, allowed in art_render.ENUMS.items():
+        if key in params and params[key] not in allowed:
+            raise web.HTTPBadRequest(text=f"{key} must be one of {allowed}")
     chars = params.get("chars")
     if chars is not None:
         if not isinstance(chars, str) or not 2 <= len(chars) <= 80 or "\n" in chars:
@@ -264,7 +302,9 @@ def _render_bytes(src: Path, params: dict, theme: str, box: tuple[int, int]) -> 
 
 
 async def render_cached(src: Path, params: dict, theme: str, box: tuple[int, int]) -> tuple[bytes, dict]:
-    key = hashlib.sha1(json.dumps([str(src), src.stat().st_mtime_ns, params, theme, box], sort_keys=True).encode()).hexdigest()
+    mask = subject_mask.find_mask(src)
+    stamp = [src.stat().st_mtime_ns, mask.stat().st_mtime_ns if mask else 0]
+    key = hashlib.sha1(json.dumps([str(src), stamp, params, theme, box], sort_keys=True).encode()).hexdigest()
     hit = _CACHE.get(key)
     if hit:
         return hit
@@ -297,7 +337,7 @@ async def handle_meta(request):
     zone = art_engine.get_zone(store(request).manifest())
     return web.json_response({"defaults": art_render.DEFAULTS, "modes": art_render.MODES, "presets": PRESETS,
                               "ramps": RAMPS, "zone": zone, "theme_bg": art_render.THEME_BG,
-                              "cap_bytes": art_engine.MAX_ASSET_BYTES})
+                              "cap_bytes": art_engine.MAX_ASSET_BYTES, "cutout_available": subject_mask.available()})
 
 
 async def handle_list(request):
@@ -325,6 +365,8 @@ async def handle_create(request):
             created.append(st.create(base64.b64decode(b64), body.get("name") or "pasted"))
     if not created:
         raise web.HTTPBadRequest(text="nothing to import")
+    loop = asyncio.get_running_loop()
+    created = [await loop.run_in_executor(None, st.auto_cutout, d) for d in created]
     return web.json_response(created)
 
 
@@ -374,6 +416,23 @@ async def handle_duplicate(request):
 async def handle_source(request):
     st = store(request)
     return web.FileResponse(st.source_path(st.get(request.match_info["id"])))
+
+
+async def handle_mask(request):
+    """GET: the subject mask (404 if none). POST: lift the subject now (Apple Vision)."""
+    st = store(request)
+    src = st.source_path(st.get(request.match_info["id"]))
+    if request.method == "POST":
+        mask, msg = await asyncio.get_running_loop().run_in_executor(None, subject_mask.generate, src)
+        if mask is None:
+            raise web.HTTPConflict(text=msg)
+        return web.json_response({"ok": True, "box": subject_mask.subject_box(mask)})
+    mask = subject_mask.find_mask(src)
+    if mask is None:
+        raise web.HTTPNotFound(text="no subject mask")
+    if "box" in request.query:
+        return web.json_response({"box": subject_mask.subject_box(mask)})
+    return web.FileResponse(mask, headers={"Cache-Control": "no-store"})
 
 
 async def handle_thumb(request):
@@ -494,6 +553,8 @@ def build_app(root: Path = Path(".studio"), manifest_path: Path = art_engine.MAN
     r.add_post("/api/drafts/{id}/rename", handle_rename)
     r.add_get("/api/drafts/{id}/source", handle_source)
     r.add_get("/api/drafts/{id}/thumb", handle_thumb)
+    r.add_get("/api/drafts/{id}/mask", handle_mask)
+    r.add_post("/api/drafts/{id}/mask", handle_mask)
     r.add_post("/api/drafts/{id}/publish", handle_publish)
     r.add_post("/api/drafts/{id}/unpublish", handle_unpublish)
     r.add_post("/api/preview", handle_preview)

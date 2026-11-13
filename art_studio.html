@@ -74,6 +74,9 @@ label.inline{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--
 #croprect{position:absolute;border:1.5px solid var(--safelight);background:rgba(255,138,61,.12);pointer-events:none;border-radius:2px}
 #source p{margin:0;color:var(--muted);font-size:13px;max-width:44ch}
 .seg2{grid-template-columns:auto auto;width:auto}.seg2 button{padding:5px 12px}
+#maskover{position:absolute;left:0;top:0;height:120px;border-radius:6px;mix-blend-mode:multiply;opacity:.75;pointer-events:none}
+.seg + .seg, .seg + .ctl, .seg + .hint + .ctl{margin-top:8px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}
 #cards-view{flex:1;overflow-y:auto;padding:22px 24px;display:flex;flex-direction:column;align-items:center;gap:22px}
 #cards-view figure{margin:0;width:100%;max-width:985px}
 #cards-view img{display:block;width:100%;height:auto;border-radius:15px;transition:opacity .12s}
@@ -141,8 +144,9 @@ label.inline{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--
     <div class="view" hidden><div class="frame light"><img id="pv-light" alt="Preview, light theme"></div><div class="meta" id="m-light"></div></div>
   </div>
   <div id="source" hidden>
-    <div id="cropbox"><img id="srcimg" alt="Source image" draggable="false"><div id="croprect" hidden></div></div>
-    <p>Drag on the source image to crop. <button class="btn quiet" id="cropreset">Reset crop</button></p>
+    <div id="cropbox"><img id="srcimg" alt="Source image" draggable="false"><img id="maskover" alt="" hidden><div id="croprect" hidden></div></div>
+    <p>Drag on the source image to crop: the art shows exactly that area. <button class="btn quiet" id="cropreset">Reset crop</button></p>
+    <label class="toggle" style="justify-content:flex-start;gap:8px"><input type="checkbox" id="croplock"><span>Lock crop to the block's shape (fills it edge to edge)</span></label>
   </div>
 </main>
 
@@ -170,16 +174,28 @@ label.inline{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--
   <div class="ctl" data-k="edges" data-min="0" data-max="0.9" data-step="0.05" data-mode="ascii"><label>Contour glyphs</label></div>
   <div class="ctl" data-k="gap" data-min="0" data-max="0.6" data-step="0.02" data-mode="mosaic"><label>Tile gap</label></div>
   <div class="ctl" data-k="ink_floor" data-min="0" data-max="0.5" data-step="0.01"><label>Noise floor</label></div>
-  <div class="ctl" data-k="vignette" data-min="0" data-max="0.9" data-step="0.05"><label>Fade edges</label></div>
 
-  <h3>Background</h3>
-  <div class="ctl" data-k="bg_remove" data-min="0" data-max="0.6" data-step="0.02"><label>Remove flat background</label></div>
+  <h3>Subject</h3>
+  <div class="seg" id="cutout" role="group" aria-label="Background removal"><button data-c="none" title="Draw the whole image">Whole image</button><button data-c="subject" title="Cut out the subject (Apple Vision, like lifting a subject in Photos)">Lift subject</button><button data-c="key" title="Remove the background colour that touches the image border">Key colour</button></div>
+  <p class="hint" id="cutoutnote"></p>
+  <div class="row" data-cut="subject"><button class="btn" id="cropsubj" title="Set the crop to the subject's bounds">Crop to subject</button><button class="btn quiet" id="relift">Detect again</button></div>
+  <div class="ctl" data-k="bg_remove" data-min="0" data-max="0.6" data-step="0.02" data-cut="key"><label>Key tolerance</label></div>
+  <div class="ctl" data-k="backdrop" data-min="0" data-max="1" data-step="0.05" data-cut="cut"><label>Keep background</label></div>
+  <div class="ctl" data-k="body" data-min="0" data-max="0.8" data-step="0.05" data-cut="cut"><label>Solid silhouette</label></div>
+
+  <h3>Edges</h3>
+  <div class="seg" id="shapes" role="group" aria-label="Edge shape"><button data-s="oval" title="Soft oval vignette">Oval</button><button data-s="torn" title="Ragged edge, like torn paper">Torn</button><button data-s="brush" title="Dry-brush streaks breaking up the sides">Brush</button><button data-s="dissolve" title="Cells scatter out towards the edge">Dissolve</button><button data-s="subject" title="Only the cut-out stays; the background survives as a ragged halo around it">Around subject</button></div>
+  <div class="ctl" data-k="vignette" data-min="0" data-max="0.9" data-step="0.05"><label>Edge width</label></div>
+  <div class="row" data-shape="noise"><button class="btn quiet" id="reroll">Another variant</button></div>
+
+  <h3>Tone</h3>
+  <div class="seg" id="polarity" role="group" aria-label="What becomes ink"><button data-p="auto" title="Whatever stands out from the image's own background">Auto</button><button data-p="bright" title="Bright areas are dense">Bright = ink</button><button data-p="dark" title="Dark areas are dense">Dark = ink</button></div>
   <h3>Light theme</h3>
-  <div class="seg" id="lightstyle" role="group" aria-label="How the art looks on the light theme"><button data-l="print" title="Dark areas become dense, like print. Reads best on white">Print</button><button data-l="match" title="Same silhouette as the dark theme, colours deepened">Match dark</button><button data-l="card" title="The dark-theme render on a dark panel">Card</button></div>
+  <div class="seg" id="lightstyle" role="group" aria-label="How the art looks on the light theme"><button data-l="auto" title="Reads like print; flips only for images on a flat background (see Tone)">Auto</button><button data-l="print" title="Dark areas are always dense, like print">Print</button><button data-l="match" title="Same silhouette as the dark theme, colours deepened">Same as dark</button><button data-l="card" title="The dark-theme render on a dark panel">Card</button></div>
   <div class="toggle"><span>Halftone instead of glyphs</span><input type="checkbox" id="lighthalftone"></div>
   <p class="hint">Glyphs carry almost no tone on white, so the light theme is drawn as a halftone by default.</p>
   <h3>Framing</h3>
-  <div class="seg seg2" id="fit" role="group" aria-label="Framing"><button data-f="cover" title="Fill the whole 370×500 block, cropping from the centre">Fill block</button><button data-f="contain" title="Show the whole image">Fit whole</button></div>
+  <div class="seg" id="fit" role="group" aria-label="Framing"><button data-f="auto" title="Your crop exactly as drawn; without a crop, fill the block">Auto</button><button data-f="cover" title="Fill the whole 370×500 block, cropping from the centre">Fill block</button><button data-f="contain" title="Show the whole image (or the whole crop)">Whole</button></div>
 
   <div data-mode="ascii">
     <h3>Characters</h3>
@@ -274,10 +290,16 @@ function paintStatus() {
 function syncControls() {
   $$('#presets .chip').forEach(c => c.setAttribute('aria-pressed', matchesPreset(c.dataset.p)));
   $$('#modes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === params.mode));
-  $$('.ctl').forEach(c => { const k = c.dataset.k, v = c.dataset.draft !== undefined ? scale : params[k]; c.querySelector('input').value = v; c.querySelector('output').value = fmt(v); });
+  $$('.ctl[data-k]').forEach(c => { const k = c.dataset.k, v = c.dataset.draft !== undefined ? scale : params[k]; c.querySelector('input').value = v; c.querySelector('output').value = fmt(v); });
   $$('.toggle input[data-k]').forEach(i => i.checked = !!params[i.dataset.k]);
   $$('#lightstyle button').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === params.light_style));
   $$('#fit button').forEach(b => b.setAttribute('aria-pressed', b.dataset.f === params.fit));
+  $$('#cutout button').forEach(b => b.setAttribute('aria-pressed', b.dataset.c === params.cutout));
+  $$('#shapes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.s === params.edge_shape));
+  $$('#polarity button').forEach(b => b.setAttribute('aria-pressed', b.dataset.p === params.polarity));
+  $$('[data-cut]').forEach(el => el.hidden = el.dataset.cut === 'cut' ? params.cutout === 'none' : el.dataset.cut !== params.cutout);
+  $$('[data-shape]').forEach(el => el.hidden = params.edge_shape === 'oval');
+  paintCutout();
   $('#lighthalftone').checked = params.light_mode === 'halftone';
   $('#chars').value = params.chars;
   $$('#ramps .chip').forEach(c => c.setAttribute('aria-pressed', META.ramps[c.dataset.r] === params.chars));
@@ -350,14 +372,40 @@ function paintCrop() {
   const pos = e => { const b = $('#srcimg').getBoundingClientRect(); return [Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), Math.min(1, Math.max(0, (e.clientY - b.top) / b.height))]; };
   box.addEventListener('pointerdown', e => { start = pos(e); box.setPointerCapture(e.pointerId); });
   box.addEventListener('pointermove', e => { if (!start) return; const p = pos(e);
-    params.crop = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.abs(p[0] - start[0]), Math.abs(p[1] - start[1])]; paintCrop(); });
+    let w = Math.abs(p[0] - start[0]), h = Math.abs(p[1] - start[1]);
+    if ($('#croplock').checked) {  // block aspect in pixels -> fractions of this image
+      const img = $('#srcimg'), k = (img.naturalWidth / img.naturalHeight) * (META.zone.height / META.zone.width);
+      h = w * k; if (h > 1) { h = 1; w = h / k; }
+      const y0 = p[1] < start[1] ? start[1] - h : start[1], x0 = p[0] < start[0] ? start[0] - w : start[0];
+      params.crop = [Math.max(0, Math.min(1 - w, x0)), Math.max(0, Math.min(1 - h, y0)), w, h];
+    } else params.crop = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), w, h];
+    paintCrop(); });
   box.addEventListener('pointerup', () => { if (!start) return; start = null;
     if (!params.crop || params.crop[2] < 0.03 || params.crop[3] < 0.03) params.crop = null;
     else params.crop = params.crop.map(v => +v.toFixed(4));
     paintCrop(); changed(); });
-  $('#srcimg').addEventListener('load', paintCrop);
+  $('#srcimg').addEventListener('load', () => { paintCrop(); paintCutout(); });
   $('#cropreset').onclick = () => { params.crop = null; paintCrop(); changed(); };
 })();
+
+/* ---------- subject cut-out ---------- */
+let maskFor = null;
+function paintCutout() {
+  if (!cur) return;
+  const ov = $('#maskover'), note = $('#cutoutnote');
+  const show = params.cutout === 'subject' && cur.has_mask;
+  ov.hidden = !show;
+  if (show) { const want = `/api/drafts/${cur.id}/mask?t=${cur.maskT || 0}`; if (maskFor !== want) { ov.src = want; maskFor = want; } ov.style.width = $('#srcimg').width + 'px'; }
+  note.textContent = params.cutout === 'subject'
+    ? (cur.has_mask ? 'Darkened on the source thumbnail = removed.' : (META.cutout_available ? 'No subject mask yet: detect it below. Until then the whole image is drawn.' : 'Needs macOS 14+ (Apple Vision). Until then the whole image is drawn.'))
+    : params.cutout === 'key' ? 'Removes the border colour, only where it touches the border.' : '';
+}
+async function lift() {
+  try { $('#relift').disabled = true; toast('Detecting the subject…');
+    await api('POST', `/api/drafts/${cur.id}/mask`); cur.has_mask = true; cur.maskT = Date.now(); toast('Subject found'); paintCutout(); render(); }
+  catch (e) { toast(e.message, true); }
+  finally { $('#relift').disabled = false; }
+}
 
 /* ---------- actions ---------- */
 $('#pub').onclick = async () => {
@@ -411,11 +459,12 @@ $('#urlform').onsubmit = async e => { e.preventDefault(); const url = $('#url').
 (async () => {
   META = await api('GET', '/api/meta');
   for (const name of Object.keys(META.presets)) { const c = document.createElement('button'); c.className = 'chip'; c.dataset.p = name; c.textContent = PRESET_NAMES[name] || name;
-    c.onclick = () => { params = {...META.defaults, crop: params.crop, chars: params.chars, fit: params.fit, light_style: params.light_style, light_mode: params.light_mode, ...META.presets[name]}; changed(); }; $('#presets').append(c); }
+    c.onclick = () => { const keep = ['crop', 'chars', 'fit', 'light_style', 'light_mode', 'cutout', 'bg_remove', 'backdrop', 'body', 'edge_shape', 'vignette', 'seed', 'polarity'];
+      params = {...META.defaults, ...Object.fromEntries(keep.map(k => [k, params[k]])), ...META.presets[name]}; changed(); }; $('#presets').append(c); }
   for (const m of META.modes) { const b = document.createElement('button'); b.dataset.m = m; b.textContent = MODE_NAMES[m] || m; b.onclick = () => { params.mode = m; changed(); }; $('#modes').append(b); }
   for (const [name, chars] of Object.entries(META.ramps)) { const c = document.createElement('button'); c.className = 'chip'; c.dataset.r = name; c.textContent = name; c.title = chars;
     c.onclick = () => { params.chars = chars; changed(); }; $('#ramps').append(c); }
-  $$('.ctl').forEach(c => {
+  $$('.ctl[data-k]').forEach(c => {
     const i = Object.assign(document.createElement('input'), {type: 'range', min: c.dataset.min, max: c.dataset.max, step: c.dataset.step});
     i.id = 'k-' + c.dataset.k; c.querySelector('label').htmlFor = i.id;
     const o = document.createElement('output'); c.append(o, i);
@@ -426,6 +475,15 @@ $('#urlform').onsubmit = async e => { e.preventDefault(); const url = $('#url').
   $$('.toggle input[data-k]').forEach(i => i.onchange = () => { params[i.dataset.k] = i.checked; changed(); });
   $$('#lightstyle button').forEach(b => b.onclick = () => { params.light_style = b.dataset.l; changed(); });
   $$('#fit button').forEach(b => b.onclick = () => { params.fit = b.dataset.f; changed(); });
+  $$('#cutout button').forEach(b => b.onclick = () => { params.cutout = b.dataset.c; changed(); if (b.dataset.c === 'subject' && !cur.has_mask && META.cutout_available) lift(); });
+  $$('#shapes button').forEach(b => b.onclick = () => { params.edge_shape = b.dataset.s; if (!params.vignette) params.vignette = 0.4; changed(); });
+  $$('#polarity button').forEach(b => b.onclick = () => { params.polarity = b.dataset.p; changed(); });
+  $('#relift').onclick = lift;
+  $('#cropsubj').onclick = async () => {
+    try { if (!cur.has_mask) await lift(); const r = await api('GET', `/api/drafts/${cur.id}/mask?box`);
+      if (!r.box) return toast('No subject in the mask', true); params.crop = r.box; paintCrop(); changed(); }
+    catch (e) { toast(e.message, true); } };
+  $('#reroll').onclick = () => { params.seed = (params.seed || 0) + 1; changed(); };
   $('#lighthalftone').onchange = e => { params.light_mode = e.target.checked ? 'halftone' : 'same'; changed(); };
   $('#chars').oninput = e => { if (e.target.value.length >= 2) { params.chars = e.target.value; scheduleRender(); scheduleSave(); } };
   $$('#viewmode button').forEach(b => b.onclick = () => setView(b.dataset.v));
