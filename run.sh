@@ -40,7 +40,18 @@ if [ -d "$TARGET_DIR/cache" ]; then
   cp -r "$TARGET_DIR/cache/." cache/ || echo "No cache directory found"
 fi
 if [ -d "$TARGET_DIR/arts" ]; then
+  # A local manifest (edited in Art Studio) is newer than the profile's copy:
+  # overwriting it would drop freshly published arts and gc their assets.
+  LOCAL_MANIFEST=""
+  if [ -f arts/manifest.json ]; then
+    LOCAL_MANIFEST="$(mktemp)"
+    cp arts/manifest.json "$LOCAL_MANIFEST"
+  fi
   cp -r "$TARGET_DIR/arts/." arts/ || echo "No arts directory found"
+  if [ -n "$LOCAL_MANIFEST" ]; then
+    cp "$LOCAL_MANIFEST" arts/manifest.json  # cp keeps the file's mode, mv would carry mktemp's 600
+    rm -f "$LOCAL_MANIFEST"
+  fi
 fi
 if [ -f "$TARGET_DIR/dark_mode.svg" ]; then
   cp "$TARGET_DIR/dark_mode.svg" . || echo "No dark_mode.svg found"
