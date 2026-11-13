@@ -49,11 +49,11 @@ class TestRender(unittest.TestCase):
         contain = art_render.render(str(square), {"cols": 24, "fit": "contain"}, "dark", box=(370, 500))
         self.assertAlmostEqual(contain.width / contain.height, 1.0, delta=0.03)
 
-    def test_light_theme_defaults_to_print_halftone(self):
-        """Glyph strokes carry no tone on white; light pages get a print halftone."""
+    def test_light_theme_defaults_to_halftone(self):
+        """Glyph strokes carry no tone on white; light pages get a halftone."""
         default = np.asarray(art_render.render(str(self.src), {"mode": "ascii", "cols": 24}, "light", box=(200, 300)))
         # ascii cells are 2:1, dots 1:1 -> the auto halftone uses ~0.7x columns (same cell count)
-        explicit = np.asarray(art_render.render(str(self.src), {"mode": "halftone", "cols": 17, "light_style": "print"}, "light", box=(200, 300)))
+        explicit = np.asarray(art_render.render(str(self.src), {"mode": "halftone", "cols": 17, "light_style": "auto"}, "light", box=(200, 300)))
         self.assertTrue(np.array_equal(default, explicit))
         same = np.asarray(art_render.render(str(self.src), {"mode": "ascii", "cols": 24, "light_mode": "same"}, "light", box=(200, 300)))
         self.assertFalse(np.array_equal(default, same), "light_mode=same keeps the dark theme's mode")
@@ -95,6 +95,72 @@ class TestRender(unittest.TestCase):
         self.assertLess(float(m[0, 0]), 0.05, "corners dissolve")
         self.assertTrue(np.all(art_render.vignette_mask(4, 4, 0) == 1), "0 turns it off")
 
+    def test_auto_fit_shows_the_crop_exactly(self):
+        """A drawn crop is the frame: it is not centre-cropped again to the zone shape."""
+        wide = art_render.render(str(self.src), {"cols": 24, "crop": [0, 0.25, 1, 0.3]}, "dark", box=(370, 500))
+        src_w, src_h = 96, 128
+        self.assertAlmostEqual(wide.width / wide.height, (src_w * 1.0) / (src_h * 0.3), delta=0.15)
+        nocrop = art_render.render(str(self.src), {"cols": 24}, "dark", box=(370, 500))
+        self.assertAlmostEqual(nocrop.width / nocrop.height, 370 / 500, delta=0.03, msg="no crop: fill the zone")
+
+    def test_key_background_only_removes_what_touches_the_border(self):
+        """A white ring interior on a white page is enclosed: it stays."""
+        h = w = 120
+        y, x = np.mgrid[0:h, 0:w]
+        r = np.hypot(x - 60, y - 60)
+        rgb = np.ones((h, w, 3), dtype=np.float32)
+        rgb[(r > 30) & (r < 38)] = 0.0
+        keep = art_render.key_background(rgb, 0.2)
+        self.assertLess(float(keep[5, 5]), 0.1, "border-connected background goes")
+        self.assertGreater(float(keep[60, 60]), 0.9, "enclosed white survives")
+        self.assertGreater(float(keep[60, 26]), 0.9, "the ring itself survives")
+
+    def _object_on_white(self):
+        path = Path(self._tmp.name) / "obj.png"
+        rgb = np.full((128, 96, 3), 245, dtype=np.uint8)
+        rgb[40:90, 30:66] = (30, 30, 40)               # dark object on a pale floor
+        Image.fromarray(rgb).save(path)
+        return path
+
+    def test_auto_polarity_draws_the_object_not_the_floor(self):
+        path = self._object_on_white()
+        for theme in ("dark", "light"):
+            a = np.asarray(art_render.render(str(path), {"cols": 24, "glow": 0, "vignette": 0, "fit": "contain"}, theme, box=(96, 128)))
+            inside, floor = a[50:80, 36:60, 3].mean(), a[5:25, 5:25, 3].mean()
+            self.assertGreater(inside, floor * 3, f"{theme}: the object must carry the ink")
+
+    def test_subject_cutout_uses_mask_file(self):
+        import subject_mask
+        mask = np.zeros((128, 96), dtype=np.uint8)
+        mask[30:100, 20:76] = 255
+        Image.fromarray(mask).save(subject_mask.mask_path(self.src))
+        p = {"cols": 24, "glow": 0, "vignette": 0, "fit": "contain", "cutout": "subject"}
+        a = np.asarray(art_render.render(str(self.src), p, "dark", box=(96, 128)))
+        self.assertLess(a[0:20, :, 3].mean(), 2, "outside the mask is empty")
+        self.assertGreater(a[40:90, 25:70, 3].mean(), 10, "the subject is drawn")
+        back = np.asarray(art_render.render(str(self.src), {**p, "backdrop": 1.0}, "dark", box=(96, 128)))
+        self.assertGreater(back[0:20, :, 3].mean(), a[0:20, :, 3].mean(), "backdrop brings the background back")
+
+    def test_subject_cutout_without_mask_draws_whole_image(self):
+        a = art_render.render(str(self.src), {"cols": 24, "cutout": "subject"}, "dark", box=(96, 128))
+        b = art_render.render(str(self.src), {"cols": 24}, "dark", box=(96, 128))
+        self.assertTrue(np.array_equal(np.asarray(a), np.asarray(b)))
+
+    def test_edge_shapes_are_deterministic_and_seeded(self):
+        subject = np.zeros((40, 30), dtype=np.float32)
+        subject[10:30, 8:22] = 1
+        for shape in art_render.EDGE_SHAPES:
+            m1 = art_render.edge_mask(shape, 40, 30, 0.5, 0, subject=subject)
+            m2 = art_render.edge_mask(shape, 40, 30, 0.5, 0, subject=subject)
+            self.assertTrue(np.array_equal(m1, m2), shape)
+            self.assertGreater(float(m1[20, 15]), 0.9, f"{shape}: middle stays")
+            self.assertLess(float(m1[0, 0]), 0.1, f"{shape}: corner dissolves")
+            self.assertTrue(np.all(art_render.edge_mask(shape, 8, 8, 0) == 1), f"{shape}: 0 = off")
+        for shape in ("torn", "brush", "dissolve", "subject"):
+            a = art_render.edge_mask(shape, 40, 30, 0.5, 0, subject=subject)
+            b = art_render.edge_mask(shape, 40, 30, 0.5, 1, subject=subject)
+            self.assertFalse(np.array_equal(a, b), f"{shape}: seed gives another variant")
+
     def test_crop_selects_region(self):
         full = art_render.render(str(self.src), {"cols": 16, "fit": "contain"}, "dark", box=(200, 200))
         top = art_render.render(str(self.src), {"cols": 16, "fit": "contain", "crop": [0, 0, 1, 0.25]}, "dark", box=(200, 200))
@@ -114,6 +180,22 @@ class TestRenderArtType(unittest.TestCase):
         self.art = {"id": "pic", "type": "render", "source": str(self.src), "enabled": True,
                     "render": {"mode": "halftone", "cols": 20}}
         self.manifest = {"zone": {"x": 15, "y": 15, "width": 370, "height": 500}, "arts": [self.art]}
+
+    def test_key_tracks_subject_mask_only_when_used(self):
+        import subject_mask
+        plain = art_engine.asset_key(self.art, art_engine.source_bytes(self.art))
+        cut = {**self.art, "render": {**self.art["render"], "cutout": "subject"}}
+        k0 = art_engine.asset_key(cut, art_engine.source_bytes(cut))
+        Image.fromarray(np.full((128, 96), 255, dtype=np.uint8)).save(subject_mask.mask_path(self.src))
+        self.assertEqual(plain, art_engine.asset_key(self.art, art_engine.source_bytes(self.art)), "mask ignored without cutout")
+        k1 = art_engine.asset_key(cut, art_engine.source_bytes(cut))
+        self.assertNotEqual(k0, k1, "a new mask means a new asset")
+
+    def test_validate_rejects_unknown_enum_values(self):
+        for key in ("cutout", "edge_shape", "fit", "polarity", "light_style"):
+            bad = {"arts": [{**self.art, "render": {key: "nope"}}]}
+            with self.assertRaises(art_engine.ManifestError, msg=key):
+                art_engine.validate_manifest(bad, base_dir=self.tmp)
 
     def test_validate_accepts_render_and_rejects_unknown_mode(self):
         art_engine.validate_manifest(self.manifest, base_dir=self.tmp)

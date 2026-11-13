@@ -404,6 +404,9 @@ def _validate_render_params(art_id: str, params) -> None:
         raise ManifestError(f"manifest: art '{art_id}' render has unknown keys {unknown}")
     if params.get("mode", "ascii") not in art_render.MODES:
         raise ManifestError(f"manifest: art '{art_id}' render.mode must be one of {art_render.MODES}")
+    for key, allowed in art_render.ENUMS.items():
+        if key in params and params[key] not in allowed:
+            raise ManifestError(f"manifest: art '{art_id}' render.{key} must be one of {allowed}")
     if "chars" in params:
         missing = missing_glyphs(str(params["chars"]))
         if missing:
@@ -431,7 +434,13 @@ def asset_key(art: dict, source_bytes: bytes) -> str:
 
 
 def source_bytes(art: dict) -> bytes:
-    return Path(art["source"]).read_bytes()
+    """Everything the render reads: the image, plus the subject mask when used."""
+    data = Path(art["source"]).read_bytes()
+    if art.get("type") == "render" and (art.get("render") or {}).get("cutout") == "subject":
+        import subject_mask
+        mask = subject_mask.find_mask(art["source"])
+        data += b"\0mask\0" + (mask.read_bytes() if mask else b"")
+    return data
 
 
 def has_source(art: dict) -> bool:

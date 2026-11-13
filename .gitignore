@@ -234,3 +234,4 @@ mock_output/
 
 # Art Studio drafts (local only, never published)
 /.studio/
+tools/.bin/

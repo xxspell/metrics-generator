@@ -187,7 +187,9 @@ Some notes on how it renders:
 
 Common fields: `enabled` (in rotation or not), `weight` (relative chance inside its group, default 1), `scale` (size inside the block, 0.2-1.5), `key` (asset hash written by `build`; lets the art work without its source file).
 
-`render` options (only non-defaults are stored): `mode` (`ascii`, `halftone`, `mosaic`), `cols`, `chars`, `edges`, `bold`, `saturation`, `contrast`, `brightness`, `gamma`, `levels`, `invert`, `glow`, `underlay`, `gap`, `ink_floor`, `vignette`, `bg_remove`, `crop` (`[x, y, w, h]` in 0-1), `fit` (`cover`, `contain`), `light_style` (`print`, `match`, `card`), `light_mode` (`halftone`, `same`).
+`render` options (only non-defaults are stored): `mode` (`ascii`, `halftone`, `mosaic`), `cols`, `chars`, `edges`, `bold`, `saturation`, `contrast`, `brightness`, `gamma`, `levels`, `invert`, `glow`, `underlay`, `gap`, `ink_floor`, `crop` (`[x, y, w, h]` in 0-1), `fit` (`auto`: the crop exactly as drawn, else fill the block; `cover`; `contain`), `polarity` (`auto`, `bright`, `dark`: what becomes ink), `light_style` (`auto`, `print`, `match`, `card`), `light_mode` (`halftone`, `same`).
+
+Background and edges: `cutout` (`none`; `subject`: the subject mask `<source>.mask.png` next to the image, made by the studio with Apple Vision on macOS 14+; `key`: remove the border colour, only where it touches the border, tolerance `bg_remove`), `backdrop` (0-1, how much of the removed background is still drawn), `body` (0-1, minimum ink across the subject), `edge_shape` (`oval`, `torn`, `brush`, `dissolve`, `subject`: the background survives as a ragged halo around the cut-out), `vignette` (edge width), `seed` (variant of the ragged edges). The mask is part of the asset hash and, like the source, never leaves your machine.
 
 The older monochrome types `image` and `engine` are still supported; see `uv run art_engine.py --help`.
 
